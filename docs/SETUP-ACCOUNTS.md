@@ -40,19 +40,22 @@ When the app goes online later, its real address gets added here too.
 
 ---
 
-## 3. Connect the app to your project
+## 3. Connect the app to your project — already done
 
-1. Dashboard → **Project Settings** → **API Keys**
-2. Copy the **anon public** key — the long one starting `eyJ...`
+The **anon public** key is baked into `index.html` as `DEFAULT_ANON_KEY`.
+Nothing to do unless you ever rotate it.
 
-   This one is public on purpose. It says *which* project you are talking to;
-   it does not say what you are allowed to read. That is decided by the
-   security rules from step 1. The key that must stay secret is the
-   `service_role` one — never paste that anywhere.
+That key is public on purpose. It says *which* project you are talking to; it
+does not say what you are allowed to read. That is decided by the security
+rules from step 1 — verified against the live project: an anonymous visitor
+cannot create a profile, cannot add a place, and cannot run the friend search.
 
-3. Open the app, find **Your account**, paste the key, hit **Save**
+The key that must stay secret is the `service_role` one. It bypasses every rule
+above. Never paste that into the app, a repository, or a chat window.
 
-It is remembered from then on.
+If you ever need to override the baked-in key without editing the file, clear
+it in the browser console with `localStorage.removeItem('wr_anon_key')` and the
+paste box comes back.
 
 ---
 
