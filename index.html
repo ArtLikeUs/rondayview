@@ -262,6 +262,30 @@ details.adv summary:hover{color:var(--mag)}
 .btn.mag:hover:not(:disabled){background:#c41a5e}
 .btn.quiet{background:#fff;border:1px solid var(--line-2);color:var(--ink-2)}
 .btn.quiet:hover{background:#fff;border-color:var(--mag);color:var(--mag)}
+/* ---------- friends ---------- */
+.frow{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
+.frow:last-child{border-bottom:0}
+.frow .avatar{width:34px;height:34px;font-size:14px}
+.frow .who{flex:1;min-width:0}
+.frow .who .nm{font-weight:500;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.frow .who .at{font-family:var(--mono);font-size:11.5px;color:var(--ink-2)}
+.mini{
+  border:1px solid var(--line-2);background:#fff;border-radius:8px;
+  padding:6px 10px;font-size:12.5px;font-weight:500;flex:none;
+}
+.mini:hover:not(:disabled){border-color:var(--mag);color:var(--mag)}
+.mini:disabled{opacity:.45;cursor:not-allowed}
+.mini.solid{background:var(--ink);border-color:var(--ink);color:#fff}
+.mini.solid:hover:not(:disabled){background:var(--mag);border-color:var(--mag);color:#fff}
+.sub-hd{
+  font-family:var(--mono);font-size:10px;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--ink-2);margin:15px 0 1px;
+}
+.sub-hd.first{margin-top:2px}
+.check{display:flex;gap:9px;align-items:flex-start;margin-top:16px;cursor:pointer}
+.check input{margin:2px 0 0;flex:none;width:17px;height:17px;accent-color:var(--mag)}
+.check span{font-size:13.5px;line-height:1.45}
+
 .avatar-edit{display:flex;align-items:center;gap:13px;margin-top:6px}
 .avatar-edit .avatar{width:64px;height:64px;font-size:24px}
 .avatar-edit .pick{flex:1;min-width:0}
@@ -296,6 +320,11 @@ details.adv summary:hover{color:var(--mag)}
     <section class="card" id="acctCard">
       <div class="card-hd"><h2>Your account</h2><span class="note" id="acctNote"></span></div>
       <div id="acctBody"></div>
+    </section>
+
+    <section class="card hide" id="friendsCard">
+      <div class="card-hd"><h2>Friends</h2><span class="note" id="friendsNote"></span></div>
+      <div class="card-bd" id="friendsBody"></div>
     </section>
 
     <section class="card">
@@ -1232,6 +1261,9 @@ let sb       = null;   // the Supabase client, once we have a key
 let session  = null;   // who is signed in, if anyone
 let profile  = null;   // their public profile row
 let homeSpot = null;   // their saved home address, never shown to anyone else
+let shareHome = false; // whether friends may start a meetup from it
+let friends  = [];     // accepted friends
+let requests = [];     // friend requests, both directions
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => (
   { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]
@@ -1279,8 +1311,8 @@ async function initAuth(){
 }
 
 async function loadProfile(){
-  profile = null; homeSpot = null;
-  if (!sb || !session) return;
+  profile = null; homeSpot = null; shareHome = false; friends = []; requests = [];
+  if (!sb || !session){ renderFriends(); return; }
 
   const { data:p, error } = await sb
     .from('profiles').select('id,handle,display_name,avatar_url')
@@ -1295,11 +1327,16 @@ async function loadProfile(){
   profile = p;
 
   const { data:priv } = await sb
-    .from('profile_private').select('home_label,home_lat,home_lng')
+    .from('profile_private').select('home_label,home_lat,home_lng,share_home_with_friends')
     .eq('id', session.user.id).maybeSingle();
 
-  if (priv && priv.home_lat !== null && priv.home_lng !== null) homeSpot = priv;
+  if (priv){
+    shareHome = !!priv.share_home_with_friends;
+    if (priv.home_lat !== null && priv.home_lng !== null) homeSpot = priv;
+  }
   applyHome();
+  await loadFriends();
+  renderFriends();
 }
 
 // Fill the first empty person with your saved address, so signing in
@@ -1408,9 +1445,218 @@ function renderAccount(problem){
   $('#signOut').addEventListener('click', async () => {
     await sb.auth.signOut();
     session = null; profile = null; homeSpot = null;
-    renderAccount();
+    shareHome = false; friends = []; requests = [];
+    renderAccount(); renderFriends();
     toast('Signed out.');
   });
+}
+
+/* ============================================================
+   FRIENDS
+   ============================================================ */
+let friendsProblem = null;
+
+async function loadFriends(){
+  friends = []; requests = []; friendsProblem = null;
+  if (!sb || !session) return;
+
+  const [f, r] = await Promise.all([ sb.rpc('my_friends'), sb.rpc('my_friend_requests') ]);
+  const err = f.error || r.error;
+
+  if (err){
+    console.error('friends', err);
+    // PGRST202 is PostgREST for "no such function" — which here means one
+    // thing in practice: the friends migration has not been run yet. Say so,
+    // rather than leaving an empty list that looks like having no friends.
+    friendsProblem = (err.code === 'PGRST202' || /Could not find the function/.test(err.message || ''))
+      ? 'Friends needs one more migration run — see docs/SETUP-FRIENDS.md.'
+      : 'Could not load your friends.';
+    return;
+  }
+
+  friends  = f.data || [];
+  requests = r.data || [];
+}
+
+function friendRow(p, buttons){
+  return `
+    <div class="frow">
+      ${avatarHtml(p)}
+      <span class="who">
+        <span class="nm">${esc(p.display_name)}</span>
+        <span class="at">@${esc(p.handle)}</span>
+      </span>
+      ${buttons}
+    </div>`;
+}
+
+function renderFriends(){
+  const card = $('#friendsCard');
+  if (!card) return;
+
+  if (!session){ card.classList.add('hide'); return; }
+  card.classList.remove('hide');
+
+  if (friendsProblem){
+    $('#friendsNote').textContent = '';
+    $('#friendsBody').innerHTML = `<p class="note bad">${esc(friendsProblem)}</p>`;
+    return;
+  }
+
+  const incoming = requests.filter(r => r.direction === 'incoming');
+  const outgoing = requests.filter(r => r.direction === 'outgoing');
+  $('#friendsNote').textContent = friends.length
+    ? `${friends.length} friend${friends.length === 1 ? '' : 's'}`
+    : '';
+
+  let html = `
+    <div class="field" style="margin-top:0">
+      <input id="friendSearch" placeholder="Find someone by handle or name"
+             autocomplete="off" spellcheck="false" aria-label="Search for people">
+    </div>
+    <div id="searchResults"></div>`;
+
+  if (incoming.length){
+    html += `<p class="sub-hd">Wants to be your friend</p>`;
+    incoming.forEach(r => {
+      html += friendRow(r, `
+        <button class="mini solid" data-accept="${r.friendship_id}">Accept</button>
+        <button class="mini" data-decline="${r.friendship_id}">No</button>`);
+    });
+  }
+
+  if (outgoing.length){
+    html += `<p class="sub-hd">Waiting on them</p>`;
+    outgoing.forEach(r => {
+      html += friendRow(r, `<button class="mini" data-cancel="${r.friendship_id}">Cancel</button>`);
+    });
+  }
+
+  html += `<p class="sub-hd${incoming.length||outgoing.length ? '' : ' first'}">Your friends</p>`;
+  if (!friends.length){
+    html += `<p class="note" style="padding:8px 0">Nobody yet. Search for a handle above.</p>`;
+  } else {
+    friends.forEach(f => {
+      html += friendRow(f, `
+        <button class="mini solid" data-trip="${f.id}"
+          ${people.length >= MAX ? 'disabled title="Up to 4 people"' : ''}>Add</button>
+        <button class="mini" data-unfriend="${f.friendship_id}" aria-label="Remove ${esc(f.display_name)}">&times;</button>`);
+    });
+  }
+
+  $('#friendsBody').innerHTML = html;
+  wireFriends();
+}
+
+let searchTimer = null;
+function wireFriends(){
+  const box = $('#friendSearch');
+  if (box){
+    box.addEventListener('input', () => {
+      clearTimeout(searchTimer);
+      const term = box.value.trim();
+      if (term.length < 2){ $('#searchResults').innerHTML = ''; return; }
+      // Wait for a pause in typing rather than asking on every keystroke.
+      searchTimer = setTimeout(() => runSearch(term), 280);
+    });
+  }
+
+  $('#friendsBody').querySelectorAll('[data-accept]').forEach(b =>
+    b.addEventListener('click', () => respondToRequest(b.dataset.accept, true, b)));
+  $('#friendsBody').querySelectorAll('[data-decline]').forEach(b =>
+    b.addEventListener('click', () => removeFriendship(b.dataset.decline, 'Declined.', b)));
+  $('#friendsBody').querySelectorAll('[data-cancel]').forEach(b =>
+    b.addEventListener('click', () => removeFriendship(b.dataset.cancel, 'Request cancelled.', b)));
+  $('#friendsBody').querySelectorAll('[data-unfriend]').forEach(b =>
+    b.addEventListener('click', () => removeFriendship(b.dataset.unfriend, 'Removed.', b)));
+  $('#friendsBody').querySelectorAll('[data-trip]').forEach(b =>
+    b.addEventListener('click', () => addFriendToTrip(b.dataset.trip, b)));
+}
+
+async function runSearch(term){
+  const { data, error } = await sb.rpc('search_profiles', { term });
+  const host = $('#searchResults');
+  if (!host) return;
+  if (error){ console.error(error); host.innerHTML = `<p class="note bad" style="padding:8px 0">Search failed.</p>`; return; }
+  if (!data.length){ host.innerHTML = `<p class="note" style="padding:8px 0">Nobody matching “${esc(term)}”.</p>`; return; }
+
+  host.innerHTML = data.map(p => {
+    const label = {
+      accepted: '<button class="mini" disabled>Friends</button>',
+      pending:  '<button class="mini" disabled>Pending</button>',
+      blocked:  '<button class="mini" disabled>Blocked</button>'
+    }[p.friendship_status] || `<button class="mini solid" data-add="${p.id}">Add</button>`;
+    return friendRow(p, label);
+  }).join('');
+
+  host.querySelectorAll('[data-add]').forEach(b =>
+    b.addEventListener('click', () => sendRequest(b.dataset.add, b)));
+}
+
+async function sendRequest(id, btn){
+  btn.disabled = true; btn.textContent = '…';
+  const { error } = await sb.from('friendships')
+    .insert({ requester_id: session.user.id, addressee_id: id });
+  if (error){
+    console.error(error);
+    // 23505 is the sorted-pair index refusing a second friendship
+    // between the same two people, in either direction.
+    toast(error.code === '23505' ? 'There is already a request between you two.' : 'Could not send that request.');
+    btn.disabled = false; btn.textContent = 'Add';
+    return;
+  }
+  btn.textContent = 'Pending';
+  toast('Request sent.');
+  await loadFriends(); renderFriends();
+}
+
+async function respondToRequest(friendshipId, accept, btn){
+  btn.disabled = true;
+  const { error } = await sb.from('friendships')
+    .update({ status: accept ? 'accepted' : 'blocked' })
+    .eq('id', friendshipId);
+  if (error){ console.error(error); toast('Could not answer that request.'); btn.disabled = false; return; }
+  toast(accept ? 'You are friends now.' : 'Declined.');
+  await loadFriends(); renderFriends();
+}
+
+async function removeFriendship(friendshipId, message, btn){
+  btn.disabled = true;
+  const { error } = await sb.from('friendships').delete().eq('id', friendshipId);
+  if (error){ console.error(error); toast('Could not do that.'); btn.disabled = false; return; }
+  toast(message);
+  await loadFriends(); renderFriends();
+}
+
+// Put a friend into the trip. If they have chosen to share their
+// starting point, it comes through a function that checks both that you
+// are really friends and that they really opted in — the browser never
+// reads their address table directly. If they have not, they still get
+// added, and somebody types where they are starting from.
+async function addFriendToTrip(profileId, btn){
+  if (people.length >= MAX){ toast(`Up to ${MAX} people.`); return; }
+  const fr = friends.find(f => f.id === profileId);
+  if (!fr) return;
+  if (people.some(p => p.friendId === profileId)){ toast(`${fr.display_name} is already coming.`); return; }
+
+  btn.disabled = true;
+  let lat = null, lng = null, label = '';
+  if (fr.shares_home){
+    const { data, error } = await sb.rpc('friend_origin', { friend: profileId });
+    if (error) console.error(error);
+    if (data && data.length){ lat = data[0].lat; lng = data[0].lng; label = data[0].label || ''; }
+  }
+
+  people.push({
+    id: nextId++, friendId: profileId, name: fr.display_name,
+    query: label, lat, lng, label, weight: 100/(people.length+1)
+  });
+  normalizeWeights();
+  renderPeople(); renderPresets(); refreshState(); renderFriends();
+
+  toast(lat !== null
+    ? `${fr.display_name} added from their saved spot.`
+    : `${fr.display_name} added — type where they are starting from.`);
 }
 
 /* ---------- editing your profile ---------- */
@@ -1450,6 +1696,15 @@ function openProfileEditor(){
                  value="${esc(homeSpot?.home_label || '')}">
           <p class="note" style="margin:6px 0 0">Only you can ever see this. It is stored apart
           from your public profile so it cannot leak with it.</p>
+
+          <label class="check">
+            <input type="checkbox" id="pShare" ${shareHome ? 'checked' : ''}>
+            <span>Let friends start a meetup from my address.
+              <span class="note">Off by default. Turning this on means an accepted friend can
+              use your home as their starting point, which shows them roughly where you live.
+              You can turn it back off any time.</span>
+            </span>
+          </label>
 
           <button class="btn mag" id="saveProfile">Save</button>
         </div>
@@ -1530,6 +1785,9 @@ async function saveProfile(){
         };
       }
     }
+    // Attached last, on purpose: the branches above replace `priv` wholesale,
+    // so setting this any earlier would quietly throw the choice away.
+    priv.share_home_with_friends = !!$('#pShare').checked;
 
     const { error: pErr } = await sb.from('profile_private')
       .upsert({ id: session.user.id, ...priv });

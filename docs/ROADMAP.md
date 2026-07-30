@@ -7,8 +7,8 @@ Built in waves. Each one leaves the app working.
 | 1 | Move into one project, under git | done |
 | 2 | Database foundation — accounts, friends, places, ads, meetups, avatars | done, tested locally, **not yet applied to Supabase** |
 | 3 | Sign in with a magic link; profiles with pictures | built; needs the migration run and your anon key — see `SETUP-ACCOUNTS.md` |
-| 4 | Friends — search, request, accept, and pull a friend's address into a meetup | next |
-| 5 | Suggest the best 3 places to meet, instead of a long list | |
+| 4 | Friends — search, request, accept, and pull a friend's address into a meetup | built; needs `20260730000002_friends.sql` run — see `SETUP-FRIENDS.md` |
+| 5 | Suggest the best 3 places to meet, instead of a long list | next |
 | 6 | Ad slots, ad serving, and a page for you to manage advertisers | |
 | 7 | App Store packaging | |
 
@@ -20,8 +20,12 @@ Built in waves. Each one leaves the app working.
 - **The ad system is generic.** One `ads` table with a `format` column covers
   banners, featured business cards, and sponsored meeting spots, so selling a new
   kind of placement is a new value in a column rather than a new table.
-- **Not published yet.** Still local. Accounts and friends need a public URL
-  before anyone but you can use them — that is a decision for wave 3 or later.
+- **Not published yet.** Still local. This is now the binding constraint: friends
+  cannot reach each other until the app has a public address, so nobody but you
+  can test wave 4 properly. Decide this before wave 5 or 6.
+- **Sharing a home address between friends is opt-in and off by default.** It is
+  a genuine disclosure — coordinates are an address — so the app says so plainly
+  rather than implying the trimmed label makes it private.
 
 ## Things deliberately left out for now
 

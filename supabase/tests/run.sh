@@ -56,6 +56,9 @@ psql -h 127.0.0.1 -p $PORT -U postgres -d wrv -q -v ON_ERROR_STOP=1 \
 echo "==> checking row level security"
 psql -h 127.0.0.1 -p $PORT -U postgres -d wrv -q -f "$HERE/02_rls.sql"
 
+echo "==> checking friends"
+psql -h 127.0.0.1 -p $PORT -U postgres -d wrv -q -f "$HERE/03_friends.sql"
+
 echo
 echo "==> re-applying migrations to prove they are safe to run twice"
 for m in "$ROOT"/supabase/migrations/*.sql; do
