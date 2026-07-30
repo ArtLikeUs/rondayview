@@ -1,0 +1,1185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#221833">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="We Rondayview">
+<title>We Rondayview — meet in the middle</title>
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Inter:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+:root{
+  --ink:#221833;
+  --ink-2:#584a72;
+  --paper:#F1EEF7;
+  --card:#ffffff;
+  --line:#ded6ec;
+  --line-2:#cabfe0;
+  --mag:#E0246E;
+  --mag-soft:#ffe6ef;
+  --good:#0E7C5A;
+
+  --display:'Bricolage Grotesque','Archivo',Impact,system-ui,sans-serif;
+  --body:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --mono:'DM Mono',ui-monospace,'SF Mono',Menlo,monospace;
+
+  --r:14px;
+  --shadow:0 1px 2px rgba(34,24,51,.06), 0 8px 24px -12px rgba(34,24,51,.22);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--paper);color:var(--ink);font-family:var(--body);
+  font-size:15px;line-height:1.45;-webkit-font-smoothing:antialiased;
+  padding-bottom:env(safe-area-inset-bottom);
+}
+button{font-family:inherit;color:inherit;cursor:pointer}
+input{font-family:inherit;font-size:16px}
+a{color:var(--mag)}
+
+.masthead{
+  background:var(--ink);color:#fff;padding:18px 18px 16px;
+  padding-top:calc(18px + env(safe-area-inset-top));position:relative;overflow:hidden;
+}
+.masthead .converge{position:absolute;inset:0;width:100%;height:100%;opacity:.5;pointer-events:none}
+.brand{
+  position:relative;font-family:var(--display);font-weight:800;
+  font-size:clamp(30px,8.5vw,46px);letter-spacing:-.035em;line-height:.92;margin:0;
+}
+.brand em{font-style:normal;color:var(--mag)}
+.tag{
+  position:relative;margin:8px 0 0;font-family:var(--mono);font-size:11.5px;
+  letter-spacing:.13em;text-transform:uppercase;color:#b6a8cf;
+}
+
+.wrap{max-width:1120px;margin:0 auto;padding:16px 14px 40px}
+@media (min-width:900px){
+  .wrap{display:grid;grid-template-columns:400px 1fr;gap:20px;align-items:start;padding:22px}
+  .col-right{position:sticky;top:22px}
+}
+.card{
+  background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+  box-shadow:var(--shadow);margin-bottom:14px;overflow:hidden;
+}
+.card-hd{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:13px 14px 0}
+.card-hd h2{
+  margin:0;font-family:var(--mono);font-size:11px;font-weight:500;
+  letter-spacing:.15em;text-transform:uppercase;color:var(--ink-2);
+}
+.card-bd{padding:12px 14px 14px}
+
+.person{border-bottom:1px solid var(--line);padding:13px 14px;position:relative}
+.person:last-of-type{border-bottom:0}
+.person-top{display:flex;align-items:center;gap:9px;margin-bottom:8px}
+.dot{
+  width:22px;height:22px;border-radius:50%;flex:none;background:var(--c);
+  display:grid;place-items:center;color:#fff;font-family:var(--mono);font-size:11px;font-weight:500;
+}
+.nameField{border:0;background:transparent;padding:0;font-weight:600;font-size:15px;color:var(--ink);width:100%;min-width:0}
+.nameField:focus{outline:none;box-shadow:0 1px 0 var(--line-2)}
+.iconbtn{
+  border:1px solid var(--line);background:#fff;border-radius:9px;width:30px;height:30px;
+  flex:none;display:grid;place-items:center;font-size:15px;color:var(--ink-2);line-height:1;
+}
+.iconbtn:hover{border-color:var(--mag);color:var(--mag)}
+.addr-row{display:flex;gap:7px}
+.addr{flex:1;min-width:0;border:1px solid var(--line-2);border-radius:10px;padding:10px 11px;background:#fff}
+.addr:focus{outline:none;border-color:var(--c);box-shadow:0 0 0 3px color-mix(in srgb,var(--c) 18%,transparent)}
+.gps{border:1px solid var(--line-2);background:#fff;border-radius:10px;padding:0 11px;font-size:16px;flex:none}
+.gps:hover{border-color:var(--c)}
+.results{
+  list-style:none;margin:6px 0 0;padding:0;border:1px solid var(--line);border-radius:10px;
+  overflow:hidden;max-height:196px;overflow-y:auto;background:#fff;
+}
+.results li{padding:9px 11px;font-size:13.5px;border-bottom:1px solid var(--line);line-height:1.3}
+.results li:last-child{border-bottom:0}
+.results li:hover{background:var(--mag-soft);cursor:pointer}
+.results .sub{display:block;color:var(--ink-2);font-size:12px}
+.locked{
+  display:flex;align-items:center;gap:8px;background:#faf8fd;border:1px solid var(--line);
+  border-radius:10px;padding:9px 11px;font-size:13.5px;
+}
+.locked .txt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.locked .chk{color:var(--c);font-weight:700}
+.linkbtn{
+  border:0;background:none;padding:0;font-family:var(--mono);font-size:11px;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);
+  text-decoration:underline;text-underline-offset:3px;flex:none;
+}
+.linkbtn:hover{color:var(--mag)}
+
+.share{margin-top:11px;display:flex;align-items:center;gap:11px}
+.share label{font-family:var(--mono);font-size:10.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-2);flex:none}
+input[type=range]{-webkit-appearance:none;appearance:none;flex:1;min-width:0;height:22px;background:transparent;margin:0}
+input[type=range]::-webkit-slider-runnable-track{height:5px;border-radius:99px;background:var(--line-2)}
+input[type=range]::-moz-range-track{height:5px;border-radius:99px;background:var(--line-2)}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:20px;height:20px;border-radius:50%;background:var(--c);
+  border:3px solid #fff;box-shadow:0 1px 4px rgba(34,24,51,.35);margin-top:-7.5px;
+}
+input[type=range]::-moz-range-thumb{
+  width:20px;height:20px;border-radius:50%;background:var(--c);
+  border:3px solid #fff;box-shadow:0 1px 4px rgba(34,24,51,.35);
+}
+.pct{font-family:var(--mono);font-size:13px;font-weight:500;min-width:42px;text-align:right;flex:none}
+
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.chip{border:1px solid var(--line-2);background:#fff;border-radius:99px;padding:7px 13px;font-size:12.5px;font-weight:500;white-space:nowrap}
+.chip:hover{border-color:var(--ink)}
+.chip.on{background:var(--ink);border-color:var(--ink);color:#fff}
+.ghost{width:100%;border:1px dashed var(--line-2);background:#fff;border-radius:10px;padding:11px;font-size:13.5px;font-weight:500;color:var(--ink-2)}
+.ghost:hover:not(:disabled){border-color:var(--mag);color:var(--mag)}
+.ghost:disabled{opacity:.4;cursor:not-allowed}
+.go{
+  width:100%;border:0;border-radius:12px;background:var(--mag);color:#fff;
+  font-family:var(--display);font-weight:700;font-size:19px;letter-spacing:-.01em;padding:16px;
+  box-shadow:0 6px 18px -6px rgba(224,36,110,.6);
+}
+.go:hover:not(:disabled){background:#c41a5e}
+.go:disabled{background:var(--line-2);box-shadow:none;cursor:not-allowed}
+
+#map{height:46vh;min-height:300px;width:100%;background:#e8e4f0}
+@media (min-width:900px){#map{height:52vh;min-height:400px}}
+.pin{
+  width:26px;height:26px;border-radius:50% 50% 50% 2px;transform:rotate(-45deg);
+  background:var(--c);border:2.5px solid #fff;box-shadow:0 2px 6px rgba(34,24,51,.4);
+  display:grid;place-items:center;
+}
+.pin span{transform:rotate(45deg);color:#fff;font-family:var(--mono);font-size:11px;font-weight:500}
+.target{
+  width:34px;height:34px;border-radius:50%;background:var(--mag);border:4px solid #fff;
+  box-shadow:0 3px 10px rgba(224,36,110,.55);display:grid;place-items:center;
+  animation:beat 2.1s ease-in-out infinite;
+}
+.target::after{content:'';width:9px;height:9px;border-radius:50%;background:#fff}
+@keyframes beat{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
+.venue-dot{width:11px;height:11px;border-radius:50%;background:#fff;border:3px solid var(--ink)}
+@media (prefers-reduced-motion:reduce){.target{animation:none}*{transition:none!important}}
+
+.fair{display:flex;height:34px;border-radius:9px;overflow:hidden;border:1px solid var(--line)}
+.fair div{display:grid;place-items:center;color:#fff;font-family:var(--mono);font-size:11.5px;font-weight:500;min-width:0;overflow:hidden}
+.legend{list-style:none;margin:11px 0 0;padding:0;display:grid;gap:7px}
+.legend li{display:flex;align-items:center;gap:8px;font-size:13.5px}
+.swatch{width:11px;height:11px;border-radius:3px;background:var(--c);flex:none}
+.legend .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+.legend .mi{font-family:var(--mono);font-size:12.5px;color:var(--ink-2)}
+
+.spot{background:var(--ink);color:#fff;padding:14px;border-radius:12px;margin-bottom:12px}
+.spot .lab{
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.15em;text-transform:uppercase;
+  color:#b6a8cf;display:flex;align-items:center;gap:8px;
+}
+.badge{border-radius:99px;padding:3px 8px;font-size:9.5px;letter-spacing:.11em;background:#3a2f52;color:#d8cbf0}
+.badge.live{background:var(--mag);color:#fff}
+.spot .val{font-family:var(--display);font-weight:700;font-size:20px;letter-spacing:-.02em;margin:7px 0 10px;line-height:1.15}
+.spot .why{
+  background:#3a2f52;border-left:3px solid var(--mag);padding:9px 11px;border-radius:6px;
+  margin:0 0 11px;font-size:12.5px;color:#e6dcf7;line-height:1.45;
+}
+.spot .row .chip{background:transparent;border-color:#5a4a78;color:#fff}
+.spot .row .chip:hover{border-color:var(--mag);color:#fff;background:var(--mag)}
+
+.venue{display:flex;align-items:center;gap:11px;padding:11px 0;border-bottom:1px solid var(--line)}
+.venue:last-child{border-bottom:0}
+.venue .kind{
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);
+  border:1px solid var(--line-2);border-radius:6px;padding:3px 6px;flex:none;
+}
+.venue .nm{flex:1;min-width:0;font-weight:500;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+.venue .d{font-family:var(--mono);font-size:12px;color:var(--ink-2);flex:none}
+.venue .go2{flex:none;border:1px solid var(--line-2);background:#fff;border-radius:8px;padding:5px 9px;font-size:12px;font-weight:500;text-decoration:none;color:var(--ink)}
+.venue .go2:hover{border-color:var(--mag);color:var(--mag)}
+
+.empty{padding:26px 14px;text-align:center;color:var(--ink-2);font-size:13.5px;line-height:1.5}
+.note{font-size:12.5px;color:var(--ink-2);line-height:1.5}
+.note.ok{color:var(--good);font-weight:500}
+.note.bad{color:var(--mag);font-weight:500}
+
+details.how{border-top:1px solid var(--line);padding:12px 14px;background:#faf8fd}
+details.how summary{
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--ink-2);cursor:pointer;list-style:none;
+}
+details.how summary::-webkit-details-marker{display:none}
+details.how summary::before{content:'? ';color:var(--mag)}
+details.how p{margin:10px 0 0;font-size:13px;color:var(--ink-2);line-height:1.55}
+
+.field{display:flex;gap:7px;margin-top:11px}.field input{flex:1;min-width:0;border:1px solid var(--line-2);border-radius:10px;padding:10px 11px;background:#fff;font-size:14px}
+.field input:focus{outline:none;border-color:var(--mag)}
+.field button{border:1px solid var(--ink);background:var(--ink);color:#fff;border-radius:10px;padding:0 16px;font-size:13.5px;font-weight:500;flex:none}
+
+details.adv{margin-top:11px}
+details.adv summary{
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--ink-2);cursor:pointer;list-style:none;
+  text-decoration:underline;text-underline-offset:3px;
+}
+details.adv summary::-webkit-details-marker{display:none}
+details.adv summary:hover{color:var(--mag)}
+
+.toast{
+  position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(80px);
+  background:var(--ink);color:#fff;padding:11px 18px;border-radius:99px;font-size:13.5px;
+  font-weight:500;box-shadow:0 8px 24px rgba(34,24,51,.35);opacity:0;transition:.28s;
+  pointer-events:none;z-index:9999;max-width:90vw;text-align:center;
+}
+.toast.on{transform:translateX(-50%) translateY(0);opacity:1}
+:focus-visible{outline:2.5px solid var(--mag);outline-offset:2px;border-radius:4px}
+.hide{display:none!important}
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <svg class="converge" viewBox="0 0 400 120" preserveAspectRatio="none" aria-hidden="true">
+    <path d="M0,12 C120,12 150,60 400,60" fill="none" stroke="#0E9E9E" stroke-width="1.5"/>
+    <path d="M0,112 C120,112 150,60 400,60" fill="none" stroke="#6C4DE0" stroke-width="1.5"/>
+    <path d="M0,62 C160,62 180,60 400,60" fill="none" stroke="#E8830C" stroke-width="1.5"/>
+    <path d="M0,96 C140,96 160,60 400,60" fill="none" stroke="#2B6CE0" stroke-width="1.5"/>
+  </svg>
+  <h1 class="brand">We <em>Rondayview</em></h1>
+  <p class="tag">Everybody drives a little. Nobody drives all of it.</p>
+</header>
+
+<div class="wrap">
+  <div class="col-left">
+
+    <section class="card">
+      <div class="card-hd"><h2>Who's coming</h2><span class="note" id="countNote">2 of 4</span></div>
+      <div id="people"></div>
+      <div class="card-bd" style="padding-top:0">
+        <button class="ghost" id="addBtn">+ Add another person</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-hd"><h2>Who drives further</h2></div>
+      <div class="card-bd">
+        <div class="row" id="presets"></div>
+        <p class="note" style="margin:11px 0 0">The sliders are linked and always add up to 100%. Push one person up and everyone else drops to make room.</p>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-hd"><h2>How it measures</h2></div>
+      <div class="card-bd">
+        <div class="row">
+          <button class="chip on" id="modeStraight">Straight line</button>
+          <button class="chip" id="modeDrive">Drive time</button>
+        </div>
+        <p class="note" id="modeNote" style="margin:11px 0 0">Straight line is instant and free. Drive time uses real roads, but needs your routing server connected.</p>
+        <div id="serverBox" class="hide">
+          <p class="note ok" id="serverNote" style="margin:11px 0 0">Connected.</p>
+          <details class="adv">
+            <summary>Change routing server</summary>
+            <div class="field">
+              <input id="fnUrl" placeholder="https://xxxx.supabase.co/functions/v1/route-matrix" autocomplete="off" spellcheck="false" aria-label="Routing server address">
+              <button id="saveUrl">Save</button>
+            </div>
+            <p class="note" style="margin:9px 0 0">Empty the box and hit Save to go back to the built-in address.</p>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <button class="go" id="goBtn" disabled>Find the spot</button>
+    <p class="note" id="goHint" style="margin:9px 2px 16px">Set at least 2 locations to start.</p>
+  </div>
+
+  <div class="col-right">
+    <section class="card">
+      <div id="map"></div>
+      <details class="how">
+        <summary>How the split is calculated</summary>
+        <p><strong>Straight line</strong> measures crow-flight miles. On a normal city grid it lands close to fair. Across a canyon, a bridge, or a freeway with no on-ramp, the crow wins and you don't.</p>
+        <p><strong>Drive time</strong> pulls real venues near the straight-line answer, asks your routing server how long each person would actually drive to each one, and picks the venue where the real minutes match your requested split most closely.</p>
+      </details>
+    </section>
+
+    <section class="card hide" id="resultCard">
+      <div class="card-bd">
+        <div class="spot">
+          <div class="lab">Meeting point <span class="badge" id="modeBadge">Straight line</span></div>
+          <div class="val" id="spotName">—</div>
+          <div class="why hide" id="modeWhy"></div>
+          <div class="row">
+            <button class="chip" id="copyBtn">Copy plan for the group chat</button>
+          </div>
+        </div>
+        <div class="fair" id="fairBar"></div>
+        <ul class="legend" id="legend"></ul>
+      </div>
+    </section>
+
+    <section class="card hide" id="venueCard">
+      <div class="card-hd"><h2>Places to actually meet</h2><span class="note" id="radiusNote"></span></div>
+      <div class="card-bd" style="padding-bottom:4px"><div class="row" id="filters"></div></div>
+      <div class="card-bd" id="venues" style="padding-top:4px"></div>
+    </section>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+/* ============================================================
+   We Rondayview
+   ============================================================ */
+
+const COLORS = ['#0E9E9E','#6C4DE0','#E8830C','#2B6CE0'];
+const MAX = 4;
+const MAX_CANDIDATES = 25;   // keep at or below the limit set in the Edge Function
+
+// Your deployed route-matrix function. This is NOT a secret — it's a public
+// address whose only power is returning capped drive times. The API key it
+// uses lives in Supabase's encrypted secrets and never appears here.
+const DEFAULT_SERVER = 'https://nddzplxlufiqckqyufbm.supabase.co/functions/v1/route-matrix';
+
+let people = [
+  { id:1, name:'Me',     query:'', lat:null, lng:null, label:'', weight:50 },
+  { id:2, name:'Friend', query:'', lat:null, lng:null, label:'', weight:50 }
+];
+let nextId = 3;
+let meetPoint = null;
+let venues = [];
+let activeFilter = 'all';
+let driveMode = true;
+let serverUrl = DEFAULT_SERVER;
+let lastMetrics = null;   // { unit:'min'|'mi', values:[...] }
+
+const $ = s => document.querySelector(s);
+
+/* ---------- storage that works in the preview AND once hosted ---------- */
+const store = {
+  async get(k){
+    try{ if (window.storage){ const r = await window.storage.get(k); return r?.value ?? null; } }catch(e){}
+    try{ return window.localStorage.getItem(k); }catch(e){ return null; }
+  },
+  async set(k,v){
+    try{ if (window.storage){ await window.storage.set(k,v); return; } }catch(e){}
+    try{ window.localStorage.setItem(k,v); }catch(e){}
+  }
+};
+
+/* ---------- map ---------- */
+const map = L.map('map', { zoomControl:true, scrollWheelZoom:false }).setView([34.05,-118.25], 10);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+  attribution:'&copy; OpenStreetMap &copy; CARTO', maxZoom:19, subdomains:'abcd'
+}).addTo(map);
+map.on('click', ()=> map.scrollWheelZoom.enable());
+let layer = L.layerGroup().addTo(map);
+
+/* ---------- helpers ---------- */
+const R_EARTH = 3958.8;
+function haversine(a,b){
+  const toR = d => d*Math.PI/180;
+  const dLat = toR(b.lat-a.lat), dLng = toR(b.lng-a.lng);
+  const h = Math.sin(dLat/2)**2 + Math.cos(toR(a.lat))*Math.cos(toR(b.lat))*Math.sin(dLng/2)**2;
+  return 2*R_EARTH*Math.asin(Math.sqrt(h));
+}
+function toast(msg){
+  const t = $('#toast');
+  t.textContent = msg; t.classList.add('on');
+  clearTimeout(t._t); t._t = setTimeout(()=>t.classList.remove('on'), 3400);
+}
+// A toast disappears. When drive time falls back, the reason has to stay on screen.
+function setWhy(msg){
+  const el = $('#modeWhy');
+  if (!msg){ el.classList.add('hide'); el.textContent = ''; }
+  else { el.classList.remove('hide'); el.textContent = msg; }
+}
+const ready = () => people.filter(p => p.lat !== null);
+const shares = () => {
+  const sum = people.reduce((s,p)=>s+p.weight,0) || 1;
+  return people.map(p => p.weight/sum);
+};
+
+/* ---------- linked sliders: the weights always add up to 100 ---------- */
+const MIN_SHARE = 5;
+const maxShare = () => 100 - MIN_SHARE*(people.length-1);
+
+// Force a list of numbers to be whole, at least MIN_SHARE each, totalling `total`.
+function settle(vals, total){
+  for (let pass=0; pass<5; pass++){
+    let deficit = 0;
+    vals = vals.map(v => { if (v < MIN_SHARE){ deficit += MIN_SHARE - v; return MIN_SHARE; } return v; });
+    if (deficit <= 0) break;
+    const flex = vals.reduce((s,v)=> s + Math.max(0, v-MIN_SHARE), 0);
+    if (flex <= 0) break;
+    vals = vals.map(v => v > MIN_SHARE ? v - deficit*((v-MIN_SHARE)/flex) : v);
+  }
+  const rounded = vals.map(v => Math.round(v));
+  let drift = total - rounded.reduce((a,b)=>a+b,0);
+  for (let k=0; drift !== 0 && k < rounded.length*4; k++){
+    const j = k % rounded.length;
+    const step = drift > 0 ? 1 : -1;
+    if (rounded[j] + step >= MIN_SHARE){ rounded[j] += step; drift -= step; }
+  }
+  return rounded;
+}
+
+// Person `idx` was dragged to `val`. Everyone else absorbs the difference,
+// keeping their relative standing to each other.
+function rebalance(idx, val){
+  val = Math.round(Math.max(MIN_SHARE, Math.min(maxShare(), val)));
+  const others = people.map((p,i)=>({p,i})).filter(o => o.i !== idx);
+  if (!others.length){ people[idx].weight = 100; return; }
+
+  const remaining = 100 - val;
+  const sum = others.reduce((s,o)=>s+o.p.weight, 0);
+  const raw = others.map(o => sum > 0
+    ? (o.p.weight/sum)*remaining
+    : remaining/others.length);
+
+  const settled = settle(raw, remaining);
+  people[idx].weight = val;
+  others.forEach((o,k) => o.p.weight = settled[k]);
+}
+
+// Used after adding or removing a person, or applying a preset.
+function normalizeWeights(){
+  const sum = people.reduce((s,p)=>s+p.weight, 0) || 1;
+  const settled = settle(people.map(p => p.weight/sum*100), 100);
+  people.forEach((p,i) => p.weight = settled[i]);
+}
+
+/* ============================================================
+   STRAIGHT-LINE MATH
+   ============================================================ */
+function solve(pts, targets){
+  const lat0 = pts.reduce((s,p)=>s+p.lat,0)/pts.length;
+  const kx = Math.cos(lat0*Math.PI/180)*69, ky = 69;
+  const XY = pts.map(p => [p.lng*kx, p.lat*ky]);
+  const n = XY.length;
+
+  let cx=0, cy=0, wsum=0;
+  XY.forEach((p,i)=>{ const w = 1-targets[i]; cx += p[0]*w; cy += p[1]*w; wsum += w; });
+  cx/=wsum; cy/=wsum;
+  if (n === 2) return { lat: cy/ky, lng: cx/kx };
+
+  const dists = (x,y) => XY.map(p => Math.hypot(p[0]-x, p[1]-y));
+  const baseTotal = dists(cx,cy).reduce((a,b)=>a+b,0) || 1;
+  const cost = (x,y) => {
+    const d = dists(x,y);
+    const tot = d.reduce((a,b)=>a+b,0) || 1e-9;
+    let err = 0;
+    d.forEach((v,i)=>{ const diff = v/tot - targets[i]; err += diff*diff; });
+    return err*100 + 0.06*(tot/baseTotal);
+  };
+  let step = Math.max(...dists(cx,cy))*0.35 || 0.5;
+  let best = cost(cx,cy);
+  const dirs = [[1,0],[-1,0],[0,1],[0,-1],[.7,.7],[.7,-.7],[-.7,.7],[-.7,-.7]];
+  for (let i=0;i<260 && step>1e-5;i++){
+    let moved = false;
+    for (const [dx,dy] of dirs){
+      const nx=cx+dx*step, ny=cy+dy*step, c=cost(nx,ny);
+      if (c < best){ best=c; cx=nx; cy=ny; moved=true; break; }
+    }
+    if (!moved) step *= 0.68;
+  }
+  return { lat: cy/ky, lng: cx/kx };
+}
+
+/* ============================================================
+   GEOCODING
+   ============================================================ */
+async function geocode(q){
+  const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&q=' + encodeURIComponent(q);
+  const res = await fetch(url, { headers:{ 'Accept':'application/json' } });
+  if (!res.ok) throw new Error('search failed');
+  return res.json();
+}
+async function reverse(lat,lng){
+  try{
+    const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`,
+      { headers:{ 'Accept':'application/json' } });
+    const j = await r.json();
+    return j.display_name || '';
+  }catch(e){ return ''; }
+}
+
+/* ============================================================
+   PEOPLE UI
+   ============================================================ */
+function renderPeople(){
+  const host = $('#people');
+  host.innerHTML = '';
+  const sh = shares();
+
+  people.forEach((p,i) => {
+    const c = COLORS[i];
+    const el = document.createElement('div');
+    el.className = 'person';
+    el.style.setProperty('--c', c);
+    el.innerHTML = `
+      <div class="person-top">
+        <span class="dot">${i+1}</span>
+        <input class="nameField" value="${p.name.replace(/"/g,'&quot;')}" aria-label="Name for person ${i+1}">
+        ${people.length>2 ? `<button class="iconbtn" data-act="remove" aria-label="Remove ${p.name}">&times;</button>` : ''}
+      </div>
+      ${p.lat!==null ? `
+        <div class="locked">
+          <span class="chk">&#10003;</span>
+          <span class="txt" title="${p.label.replace(/"/g,'&quot;')}">${p.label}</span>
+          <button class="linkbtn" data-act="change">Change</button>
+        </div>` : `
+        <div class="addr-row">
+          <input class="addr" placeholder="Address, cross streets, or city" value="${p.query.replace(/"/g,'&quot;')}" aria-label="Location for ${p.name}">
+          <button class="gps" data-act="gps" aria-label="Use my current location">&#9678;</button>
+        </div>
+        <ul class="results hide" data-role="results"></ul>`}
+      <div class="share">
+        <label>Travel</label>
+        <input type="range" min="${MIN_SHARE}" max="${maxShare()}" value="${p.weight}" data-act="weight" aria-label="Travel share for ${p.name}">
+        <span class="pct">${Math.round(sh[i]*100)}%</span>
+      </div>`;
+
+    el.querySelector('.nameField').addEventListener('input', e => { p.name = e.target.value || 'Someone'; });
+    el.querySelector('[data-act=weight]').addEventListener('input', e => {
+      rebalance(i, +e.target.value); syncSliders(); syncPresets();
+    });
+    el.querySelector('[data-act=remove]')?.addEventListener('click', () => {
+      people = people.filter(x => x.id !== p.id);
+      normalizeWeights();
+      renderPeople(); renderPresets(); refreshState(); drawMap();
+    });
+
+    if (p.lat !== null){
+      el.querySelector('[data-act=change]').addEventListener('click', () => {
+        p.lat = p.lng = null; p.label='';
+        renderPeople(); refreshState(); drawMap();
+      });
+    } else {
+      const input = el.querySelector('.addr');
+      const list = el.querySelector('[data-role=results]');
+      let timer;
+      input.addEventListener('input', e => {
+        p.query = e.target.value;
+        clearTimeout(timer);
+        if (p.query.trim().length < 3){ list.classList.add('hide'); return; }
+        timer = setTimeout(async () => {
+          list.innerHTML = '<li>Searching&hellip;</li>'; list.classList.remove('hide');
+          try{
+            const hits = await geocode(p.query);
+            if (!hits.length){ list.innerHTML = '<li>No match. Try adding the city or ZIP.</li>'; return; }
+            list.innerHTML = '';
+            hits.forEach(h => {
+              const parts = h.display_name.split(', ');
+              const li = document.createElement('li');
+              li.innerHTML = `<strong>${parts[0]}</strong><span class="sub">${parts.slice(1,4).join(', ')}</span>`;
+              li.addEventListener('click', () => {
+                p.lat=+h.lat; p.lng=+h.lon; p.label=parts.slice(0,3).join(', ');
+                renderPeople(); refreshState(); drawMap();
+              });
+              list.appendChild(li);
+            });
+          }catch(err){
+            list.innerHTML = '<li>Search is unreachable right now. Check your connection and try again.</li>';
+          }
+        }, 550);
+      });
+      el.querySelector('[data-act=gps]').addEventListener('click', () => {
+        if (!navigator.geolocation){ toast('This browser has no location access.'); return; }
+        toast('Getting your location…');
+        navigator.geolocation.getCurrentPosition(async pos => {
+          p.lat=pos.coords.latitude; p.lng=pos.coords.longitude; p.label='Locating…';
+          renderPeople(); refreshState(); drawMap();
+          const name = await reverse(p.lat,p.lng);
+          p.label = name ? name.split(', ').slice(0,3).join(', ') : 'My current location';
+          renderPeople();
+        }, () => toast('Location was blocked. Type an address instead.'), { enableHighAccuracy:true, timeout:10000 });
+      });
+    }
+    host.appendChild(el);
+  });
+
+  $('#countNote').textContent = `${people.length} of ${MAX}`;
+  $('#addBtn').disabled = people.length >= MAX;
+}
+
+function syncSliders(){
+  const sh = shares();
+  document.querySelectorAll('#people .person').forEach((el,i) => {
+    if (!people[i]) return;
+    const r = el.querySelector('input[type=range]');
+    if (r) r.value = people[i].weight;      // move the other thumbs too
+    const pct = el.querySelector('.pct');
+    if (pct) pct.textContent = Math.round(sh[i]*100)+'%';
+  });
+}
+
+/* ---------- presets ---------- */
+function renderPresets(){
+  const host = $('#presets'); host.innerHTML = '';
+  const opts = [{key:'even',label:'Even split'}];
+  if (people.length === 2){
+    opts.push({key:'a75',label:'P1 drives 75%'},{key:'b75',label:'P2 drives 75%'});
+  } else {
+    people.forEach((p,i)=>opts.push({key:'heavy'+i,label:`P${i+1} drives most`}));
+  }
+  opts.forEach(o=>{
+    const b=document.createElement('button');
+    b.className='chip'; b.textContent=o.label; b.dataset.key=o.key;
+    b.addEventListener('click',()=>applyPreset(o.key));
+    host.appendChild(b);
+  });
+  syncPresets();
+}
+function applyPreset(key){
+  const n = people.length;
+  if (key==='even'){
+    people.forEach(p => p.weight = 100/n);
+  } else if (key==='a75'){
+    people[0].weight = 75; people[1].weight = 25;
+  } else if (key==='b75'){
+    people[0].weight = 25; people[1].weight = 75;
+  } else if (key.startsWith('heavy')){
+    const idx = +key.slice(5);
+    people.forEach((p,i) => p.weight = i===idx ? 75 : 25/(n-1));
+  }
+  normalizeWeights();
+  renderPeople(); syncPresets();
+}
+function syncPresets(){
+  const sh = shares().map(v=>Math.round(v*100));
+  let active = null;
+  if (sh.every(v=>Math.abs(v-100/people.length)<=1)) active='even';
+  else if (people.length===2){
+    if (sh[0]>=74&&sh[0]<=76) active='a75';
+    if (sh[1]>=74&&sh[1]<=76) active='b75';
+  } else {
+    const hi = sh.indexOf(Math.max(...sh));
+    if (sh[hi]>=74&&sh[hi]<=76) active='heavy'+hi;
+  }
+  document.querySelectorAll('#presets .chip').forEach(c=>c.classList.toggle('on', c.dataset.key===active));
+}
+
+function refreshState(){
+  const n = ready().length, ok = n>=2;
+  $('#goBtn').disabled = !ok;
+  $('#goHint').textContent = ok
+    ? `Ready — ${n} location${n>1?'s':''} set.`
+    : `Set at least 2 locations to start. (${n} so far.)`;
+}
+
+/* ============================================================
+   MODE SWITCH + SERVER ADDRESS
+   ============================================================ */
+function renderMode(){
+  $('#modeStraight').classList.toggle('on', !driveMode);
+  $('#modeDrive').classList.toggle('on', driveMode);
+  $('#serverBox').classList.toggle('hide', !driveMode);
+  $('#modeNote').textContent = driveMode
+    ? 'Drive time asks your routing server for real road times, then picks the venue where the split is actually fair.'
+    : 'Straight line is instant and free. Drive time uses real roads, but needs your routing server connected.';
+  const note = $('#serverNote');
+  if (serverUrl){
+    note.className = 'note ok';
+    note.textContent = serverUrl === DEFAULT_SERVER
+      ? 'Connected to your built-in routing server. The API key stays on the server, never in this page.'
+      : 'Connected to a custom routing server.';
+  } else {
+    note.className = 'note bad';
+    note.textContent = 'No routing server. Open "Change routing server" below and add one.';
+  }
+}
+$('#modeStraight').addEventListener('click', () => { driveMode=false; renderMode(); });
+$('#modeDrive').addEventListener('click', () => { driveMode=true; renderMode(); });
+
+$('#saveUrl').addEventListener('click', async () => {
+  const v = $('#fnUrl').value.trim().replace(/\/+$/,'');
+  if (v && !/^https:\/\/.+/.test(v)){
+    const n = $('#serverNote'); n.className='note bad';
+    n.textContent = 'That address needs to start with https://';
+    return;
+  }
+  // Empty means "forget my override and use the one built into this file".
+  serverUrl = v || DEFAULT_SERVER;
+  await store.set('wr_fn_url', v);
+  $('#fnUrl').value = serverUrl;
+  renderMode();
+  toast(v ? 'Custom routing server saved.' : 'Back to the built-in server.');
+});
+
+/* ============================================================
+   MAP
+   ============================================================ */
+function drawMap(){
+  layer.clearLayers();
+  const pts = [];
+  people.forEach((p,i)=>{
+    if (p.lat===null) return;
+    const icon = L.divIcon({className:'',iconSize:[26,26],iconAnchor:[13,13],
+      html:`<div class="pin" style="--c:${COLORS[i]}"><span>${i+1}</span></div>`});
+    L.marker([p.lat,p.lng],{icon}).bindPopup(`<strong>${p.name}</strong><br>${p.label}`).addTo(layer);
+    pts.push([p.lat,p.lng]);
+  });
+  if (meetPoint){
+    people.forEach((p,i)=>{
+      if (p.lat===null) return;
+      L.polyline([[p.lat,p.lng],[meetPoint.lat,meetPoint.lng]],
+        {color:COLORS[i],weight:2.5,opacity:.65,dashArray:'5,7'}).addTo(layer);
+    });
+    const t = L.divIcon({className:'',iconSize:[34,34],iconAnchor:[17,17],html:'<div class="target"></div>'});
+    L.marker([meetPoint.lat,meetPoint.lng],{icon:t,zIndexOffset:800})
+      .bindPopup('<strong>The meeting point</strong>').addTo(layer);
+    pts.push([meetPoint.lat,meetPoint.lng]);
+
+    venues.filter(v=>activeFilter==='all'||v.kind===activeFilter).slice(0,25).forEach(v=>{
+      const vi = L.divIcon({className:'',iconSize:[11,11],iconAnchor:[5,5],html:'<div class="venue-dot"></div>'});
+      L.marker([v.lat,v.lng],{icon:vi}).bindPopup(`<strong>${v.name}</strong><br>${v.kindLabel}`).addTo(layer);
+    });
+  }
+  if (pts.length===1) map.setView(pts[0],14);
+  else if (pts.length>1) map.fitBounds(L.latLngBounds(pts).pad(0.28));
+}
+
+/* ============================================================
+   VENUES (OpenStreetMap Overpass — free, no key)
+   ============================================================ */
+const KINDS = {
+  cafe:['coffee','Coffee'], ice_cream:['coffee','Coffee'],
+  bar:['bar','Bar'], pub:['bar','Bar'], biergarten:['bar','Bar'],
+  restaurant:['food','Food'], fast_food:['food','Food'],
+  fuel:['fuel','Gas'],
+  park:['park','Park']
+};
+
+// Overpass is free and volunteer-run, so any single server is often busy.
+// Try the mirrors in turn before giving up.
+const OVERPASS_MIRRORS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter'
+];
+
+async function overpassQuery(q){
+  const problems = [];
+  for (const url of OVERPASS_MIRRORS){
+    const host = new URL(url).hostname;
+    const stop = new AbortController();
+    const timer = setTimeout(()=>stop.abort(), 8000);
+    try{
+      const res = await fetch(url, {
+        method:'POST',
+        body:'data='+encodeURIComponent(q),
+        headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        signal: stop.signal
+      });
+      clearTimeout(timer);
+      if (!res.ok){
+        problems.push(`${host} returned ${res.status}`);
+        continue;
+      }
+      const text = await res.text();
+      try{ return JSON.parse(text); }
+      catch{ problems.push(`${host} sent a non-JSON reply`); }
+    }catch(e){
+      clearTimeout(timer);
+      problems.push(`${host} ${e.name === 'AbortError' ? 'timed out' : 'unreachable'}`);
+    }
+  }
+  throw new Error(problems.join('; ') || 'no venue directory answered');
+}
+
+// Turn raw Overpass elements into venues we can use.
+function mapElements(elements){
+  return elements.map(e=>{
+    const lat = e.lat ?? e.center?.lat, lng = e.lon ?? e.center?.lon;
+    if (!lat || !e.tags) return null;
+    const key = e.tags.amenity || (e.tags.leisure==='park' ? 'park' : null);
+    const k = KINDS[key]; if (!k) return null;
+    // Loads of gas stations are mapped with a brand but no name.
+    const label = e.tags.name || e.tags.brand || e.tags.operator
+                  || (key === 'fuel' ? 'Gas station' : null);
+    if (!label) return null;
+    return { name:label, lat, lng, kind:k[0], kindLabel:k[1] };
+  }).filter(Boolean);
+}
+
+let venueSource = null;   // which directory actually answered
+
+async function fetchVenuesOverpass(centre){
+  for (const r of [1200, 2600, 4800]){
+    const q = `[out:json][timeout:25];
+(
+  nwr["amenity"~"^(cafe|bar|pub|restaurant|fast_food|ice_cream|biergarten)$"]["name"](around:${r},${centre.lat},${centre.lng});
+  nwr["amenity"="fuel"](around:${r},${centre.lat},${centre.lng});
+  nwr["leisure"="park"]["name"](around:${r},${centre.lat},${centre.lng});
+);
+out center 150;`;
+    const j = await overpassQuery(q);
+    const list = mapElements(j.elements || []);
+    if (list.length >= 8 || r === 4800){
+      $('#radiusNote').textContent = `within ${(r/1609).toFixed(1)} mi`;
+      return list;
+    }
+  }
+  return [];
+}
+
+// Backup directory. Nominatim is the same service that powers the address
+// search in this app, so if addresses work, this works. Slower and thinner
+// than Overpass, but it answers when Overpass is buried.
+async function fetchVenuesNominatim(centre){
+  const d = 0.045;   // roughly a 3 mile box
+  const vb = [
+    (centre.lng-d).toFixed(5), (centre.lat+d).toFixed(5),
+    (centre.lng+d).toFixed(5), (centre.lat-d).toFixed(5)
+  ].join(',');
+
+  const searches = [
+    ['gas station', 'fuel',   'Gas'],
+    ['coffee',      'coffee', 'Coffee'],
+    ['restaurant',  'food',   'Food']
+  ];
+
+  const out = [];
+  for (let i=0; i<searches.length; i++){
+    const [term, kind, kindLabel] = searches[i];
+    try{
+      const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=15&bounded=1&viewbox=${vb}&q=${encodeURIComponent(term)}`;
+      const r = await fetch(url, { headers:{ 'Accept':'application/json' } });
+      if (r.ok){
+        const j = await r.json();
+        j.forEach(h => {
+          const name = (h.name && h.name.trim()) || h.display_name.split(', ')[0];
+          if (!name) return;
+          out.push({ name, lat:+h.lat, lng:+h.lon, kind, kindLabel });
+        });
+      }
+    }catch(e){ /* try the next category */ }
+    // Nominatim asks for no more than one request a second. Be a good guest.
+    if (i < searches.length-1) await new Promise(r => setTimeout(r, 1100));
+  }
+  return out;
+}
+
+// Best source: ask our own server. It has a datacenter IP and a proper
+// User-Agent, so Overpass treats it as a real client instead of throttling it.
+async function fetchVenuesViaServer(centre, radius){
+  const res = await fetch(serverUrl, {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ kind:'venues', lat:centre.lat, lng:centre.lng, radius })
+  });
+  const data = await res.json().catch(()=>({}));
+  if (!res.ok) throw new Error(data.error || 'venue lookup failed on the server');
+  return mapElements(data.elements || []);
+}
+
+async function fetchVenues(centre){
+  const problems = [];
+
+  // 1. Our own server.
+  if (serverUrl){
+    for (const r of [1600, 3200, 6000]){
+      try{
+        const list = await fetchVenuesViaServer(centre, r);
+        if (list.length >= 8 || r === 6000){
+          if (list.length){
+            venueSource = 'server';
+            $('#radiusNote').textContent = `within ${(r/1609).toFixed(1)} mi`;
+            return list;
+          }
+        }
+      }catch(err){ problems.push(err.message); break; }
+    }
+    if (!problems.length) problems.push('nothing listed near this point');
+  }
+
+  // 2. Straight from the browser, in case the server route is unavailable.
+  try{
+    const list = await fetchVenuesOverpass(centre);
+    if (list.length){ venueSource = 'browser'; return list; }
+  }catch(err){ problems.push(err.message); }
+
+  // 3. Last resort: the same directory that powers address search.
+  const backup = await fetchVenuesNominatim(centre);
+  if (backup.length){
+    venueSource = 'nominatim';
+    $('#radiusNote').textContent = 'within ~3 mi';
+    return backup;
+  }
+
+  venueSource = null;
+  throw new Error(problems.join('; ') || 'no directory answered');
+}
+
+// Keep candidates spread out instead of 25 taquerias on the same block.
+function spreadOut(list, centre, max){
+  const sorted = [...list].sort((a,b)=>haversine(a,centre)-haversine(b,centre));
+  const seen = new Set(), out = [];
+  for (const v of sorted){
+    const cell = `${Math.round(v.lat/0.004)}:${Math.round(v.lng/0.004)}`;
+    if (seen.has(cell)) continue;
+    seen.add(cell); out.push(v);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+// Fallback: if the venue lookup comes back empty (Overpass is free and flaky),
+// test a ring of plain map points instead so drive time still runs.
+function gridAround(centre){
+  const out = [{ lat:centre.lat, lng:centre.lng }];
+  const kLat = 1/69;
+  const kLng = 1/(69*Math.cos(centre.lat*Math.PI/180));
+  for (const miles of [1.5, 3.5]){
+    for (let a=0; a<8; a++){
+      const ang = a*Math.PI/4;
+      out.push({
+        lat: centre.lat + Math.sin(ang)*miles*kLat,
+        lng: centre.lng + Math.cos(ang)*miles*kLng
+      });
+    }
+  }
+  return out;   // 17 points, comfortably under the server's limit of 30
+}
+
+/* ============================================================
+   DRIVE TIME
+   This talks to YOUR Supabase function. It never talks to
+   OpenRouteService, and it never sees the API key.
+   ============================================================ */
+async function fetchMatrix(origins, candidates){
+  const res = await fetch(serverUrl, {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      // Routing services want [longitude, latitude] — the reverse of Leaflet.
+      origins: origins.map(p => [p.lng, p.lat]),
+      destinations: candidates.map(v => [v.lng, v.lat]),
+      profile: 'driving-car'
+    })
+  });
+  const data = await res.json().catch(()=>({}));
+  if (!res.ok) throw new Error(data.error || 'Routing server returned an error.');
+  if (!Array.isArray(data.durations)) throw new Error('Routing server sent no drive times.');
+  return data.durations;   // seconds, [origin][candidate]
+}
+
+// Pick the venue whose real drive times split closest to what was asked for.
+function pickBest(durations, targets){
+  const n = durations.length, m = durations[0]?.length ?? 0;
+  const totals = [];
+  let minTotal = Infinity;
+  for (let j=0;j<m;j++){
+    let t=0, ok=true;
+    for (let i=0;i<n;i++){
+      const d = durations[i][j];
+      if (d === null || d === undefined){ ok=false; break; }
+      t += d;
+    }
+    totals[j] = ok ? t : null;
+    if (ok && t < minTotal) minTotal = t;
+  }
+  let best = -1, bestCost = Infinity;
+  for (let j=0;j<m;j++){
+    const tot = totals[j];
+    if (tot === null || tot <= 0) continue;
+    let err = 0;
+    for (let i=0;i<n;i++){ const diff = durations[i][j]/tot - targets[i]; err += diff*diff; }
+    const cost = err*100 + 0.6*(tot/minTotal - 1);   // fairness first, total time second
+    if (cost < bestCost){ bestCost = cost; best = j; }
+  }
+  return best;
+}
+
+/* ============================================================
+   THE MAIN EVENT
+   ============================================================ */
+async function findSpot(){
+  const active = ready();
+  if (active.length < 2) return;
+
+  const wsum = active.reduce((s,p)=>s+p.weight,0);
+  const targets = active.map(p => p.weight/wsum);
+
+  const geoPoint = solve(active, targets);
+  meetPoint = geoPoint;
+  lastMetrics = { unit:'mi', values: active.map(p=>haversine(p, geoPoint)) };
+
+  $('#goBtn').disabled = true;
+  $('#goBtn').textContent = 'Working…';
+  $('#resultCard').classList.remove('hide');
+  $('#spotName').textContent = 'Looking around…';
+  $('#modeBadge').textContent = 'Straight line';
+  $('#modeBadge').classList.remove('live');
+  setWhy('');
+  drawMap();
+
+  // Venues are needed either way: as suggestions, or as drive-time candidates.
+  let venueError = null;
+  try{ venues = await fetchVenues(geoPoint); }
+  catch(err){ venues = []; venueError = err.message; }
+
+  let winner = null;
+
+  if (driveMode && serverUrl){
+    const candidates = venues.length
+      ? spreadOut(venues, geoPoint, MAX_CANDIDATES)
+      : gridAround(geoPoint);
+    try{
+      $('#spotName').textContent = 'Checking real drive times…';
+      const durations = await fetchMatrix(active, candidates);
+      const idx = pickBest(durations, targets);
+      if (idx >= 0){
+        winner = candidates[idx];
+        meetPoint = { lat: winner.lat, lng: winner.lng };
+        lastMetrics = { unit:'min', values: active.map((_,i)=> durations[i][idx]/60) };
+        $('#modeBadge').textContent = 'Drive time';
+        $('#modeBadge').classList.add('live');
+        setWhy(venues.length ? '' : `Drive times are real — this spot is genuinely fair. But the venue directory didn't answer (${venueError || 'nothing listed nearby'}), so you're getting a street address instead of a named place. Hit Find the spot again in a minute and it usually comes back.`);
+      } else {
+        setWhy('Drive time ran, but nothing nearby came back as reachable by road. Showing straight-line miles instead.');
+      }
+    }catch(err){
+      setWhy(`Drive time failed — ${err.message} Showing straight-line miles instead.`);
+    }
+  } else if (driveMode && !serverUrl){
+    setWhy('Drive time is selected, but no routing server is connected. Paste your function URL under "How it measures" and hit Save.');
+  }
+
+  renderSplit(active);
+
+  if (winner && winner.name){
+    $('#spotName').textContent = winner.name;
+  } else {
+    $('#spotName').textContent = 'Finding the address…';
+    const name = await reverse(meetPoint.lat, meetPoint.lng);
+    $('#spotName').textContent = name
+      ? name.split(', ').slice(0,4).join(', ')
+      : `${meetPoint.lat.toFixed(4)}, ${meetPoint.lng.toFixed(4)}`;
+  }
+
+  renderVenueSection();
+  drawMap();
+
+  $('#goBtn').disabled = false;
+  $('#goBtn').textContent = 'Find the spot';
+  $('#resultCard').scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+function renderSplit(active){
+  const vals = lastMetrics.values;
+  const unit = lastMetrics.unit;
+  const total = vals.reduce((a,b)=>a+b,0) || 1;
+
+  const bar = $('#fairBar'); bar.innerHTML = '';
+  const legend = $('#legend'); legend.innerHTML = '';
+
+  active.forEach((p,i)=>{
+    const idx = people.indexOf(p);
+    const pct = vals[i]/total*100;
+
+    const seg = document.createElement('div');
+    seg.style.background = COLORS[idx];
+    seg.style.flex = pct;
+    seg.textContent = pct >= 11 ? Math.round(pct)+'%' : '';
+    seg.title = `${p.name}: ${Math.round(pct)}%`;
+    bar.appendChild(seg);
+
+    const shown = unit === 'min' ? `${Math.round(vals[i])} min` : `${vals[i].toFixed(1)} mi`;
+    const li = document.createElement('li');
+    li.style.setProperty('--c', COLORS[idx]);
+    li.innerHTML = `<span class="swatch"></span>
+      <span class="nm">${p.name}</span>
+      <span class="mi">${shown} &middot; ${Math.round(pct)}%</span>`;
+    legend.appendChild(li);
+  });
+}
+
+function renderVenueSection(){
+  $('#venueCard').classList.remove('hide');
+  venues.forEach(v => v.dist = haversine(v, meetPoint));
+  venues.sort((a,b)=>a.dist-b.dist);
+
+  if (!venues.length){
+    $('#filters').innerHTML = '';
+    $('#venues').innerHTML = '<div class="empty">No venue list this time. Either the free directory is busy, or this point sits on open land. The meeting point above is still correct — try again shortly for named suggestions.</div>';
+    return;
+  }
+  const present = ['all', ...new Set(venues.map(v=>v.kind))];
+  const labels = {all:'All',coffee:'Coffee',bar:'Bar',food:'Food',fuel:'Gas',park:'Park'};
+  activeFilter = 'all';
+  $('#filters').innerHTML = '';
+  present.forEach(k=>{
+    const b=document.createElement('button');
+    b.className='chip'+(k==='all'?' on':''); b.textContent=labels[k]; b.dataset.k=k;
+    b.addEventListener('click',()=>{
+      activeFilter=k;
+      document.querySelectorAll('#filters .chip').forEach(c=>c.classList.toggle('on',c.dataset.k===k));
+      renderVenues(); drawMap();
+    });
+    $('#filters').appendChild(b);
+  });
+  renderVenues();
+}
+
+function renderVenues(){
+  const list = venues.filter(v=>activeFilter==='all'||v.kind===activeFilter).slice(0,14);
+  $('#venues').innerHTML = '';
+  list.forEach(v=>{
+    const el = document.createElement('div');
+    el.className = 'venue';
+    el.innerHTML = `
+      <span class="kind">${v.kindLabel}</span>
+      <span class="nm">${v.name}</span>
+      <span class="d">${v.dist.toFixed(1)} mi</span>
+      <a class="go2" target="_blank" rel="noopener"
+         href="https://www.google.com/maps/dir/?api=1&destination=${v.lat},${v.lng}">Directions</a>`;
+    el.querySelector('.nm').addEventListener('click',()=>map.setView([v.lat,v.lng],16));
+    $('#venues').appendChild(el);
+  });
+}
+
+/* ---------- share ---------- */
+$('#copyBtn').addEventListener('click', async () => {
+  if (!meetPoint) return;
+  const active = ready();
+  const unit = lastMetrics?.unit || 'mi';
+  const lines = [
+    'WE RONDAYVIEW — meeting point',
+    $('#spotName').textContent,
+    `https://www.google.com/maps/search/?api=1&query=${meetPoint.lat.toFixed(5)},${meetPoint.lng.toFixed(5)}`,
+    ''
+  ];
+  active.forEach((p,i)=>{
+    const v = lastMetrics ? lastMetrics.values[i] : haversine(p, meetPoint);
+    lines.push(`${p.name} — ${unit==='min' ? Math.round(v)+' min drive' : v.toFixed(1)+' mi'}`);
+    lines.push(`https://www.google.com/maps/dir/?api=1&origin=${p.lat},${p.lng}&destination=${meetPoint.lat},${meetPoint.lng}`);
+  });
+  const text = lines.join('\n');
+  try{
+    await navigator.clipboard.writeText(text);
+    toast('Copied. Paste it in the group chat.');
+  }catch(e){ prompt('Copy this:', text); }
+});
+
+/* ---------- wire up ---------- */
+$('#addBtn').addEventListener('click', () => {
+  if (people.length >= MAX) return;
+  people.push({id:nextId++,name:`Person ${people.length+1}`,query:'',lat:null,lng:null,label:'',weight:100/(people.length+1)});
+  normalizeWeights();
+  renderPeople(); renderPresets(); refreshState();
+});
+$('#goBtn').addEventListener('click', findSpot);
+
+(async function init(){
+  renderPeople(); renderPresets(); refreshState();
+  const saved = await store.get('wr_fn_url');
+  if (saved) serverUrl = saved;          // a saved override wins over the built-in
+  $('#fnUrl').value = serverUrl;
+  renderMode();
+  setTimeout(()=>map.invalidateSize(), 200);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+.DS_Store
+node_modules/
+
+# Supabase CLI local state — machine-specific, not source
+supabase/.temp/
+supabase/.branches/
+
+# Never commit keys
+.env
+.env.*
+!.env.example
