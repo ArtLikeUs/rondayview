@@ -262,6 +262,26 @@ details.adv summary:hover{color:var(--mag)}
 .btn.mag:hover:not(:disabled){background:#c41a5e}
 .btn.quiet{background:#fff;border:1px solid var(--line-2);color:var(--ink-2)}
 .btn.quiet:hover{background:#fff;border-color:var(--mag);color:var(--mag)}
+/* ---------- ads ---------- */
+.ad{border:1px solid var(--line);border-radius:12px;background:#fff;overflow:hidden;margin-bottom:14px;box-shadow:var(--shadow)}
+.ad-head{display:flex;align-items:center;gap:8px;padding:10px 13px 0}
+.ad-tag{
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--ink-2);border:1px solid var(--line-2);border-radius:5px;padding:2px 6px;flex:none;
+}
+.ad-head .biz{font-family:var(--mono);font-size:10.5px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ad img{display:block;width:100%;height:auto;max-height:170px;object-fit:cover;margin-top:10px}
+.ad .ad-bd{padding:11px 13px 13px}
+.ad .hl{font-weight:600;font-size:15px;line-height:1.3}
+.ad .bd{font-size:13px;color:var(--ink-2);margin-top:4px;line-height:1.45}
+.ad .cta{
+  display:inline-block;margin-top:11px;border:1px solid var(--ink);background:var(--ink);
+  color:#fff;border-radius:9px;padding:8px 14px;font-size:13px;font-weight:500;text-decoration:none;
+}
+.ad .cta:hover{background:var(--mag);border-color:var(--mag)}
+.choice.sponsored{background:#fdf8fa}
+.choice.sponsored .rank{background:transparent;border:1px dashed var(--line-2);color:var(--ink-2);font-size:9px}
+
 /* ---------- the three picks ---------- */
 .choice{display:flex;gap:11px;padding:13px 0;border-bottom:1px solid var(--line);align-items:flex-start}
 .choice:last-child{border-bottom:0}
@@ -389,6 +409,7 @@ details.adv summary:hover{color:var(--mag)}
 
     <button class="go" id="goBtn" disabled>Find the spot</button>
     <p class="note" id="goHint" style="margin:9px 2px 16px">Set at least 2 locations to start.</p>
+    <div id="adBanner"></div>
   </div>
 
   <div class="col-right">
@@ -413,12 +434,14 @@ details.adv summary:hover{color:var(--mag)}
         </div>
         <div class="fair" id="fairBar"></div>
         <ul class="legend" id="legend"></ul>
+        <div id="adFeatured" style="margin-top:14px"></div>
       </div>
     </section>
 
     <section class="card hide" id="pickCard">
       <div class="card-hd"><h2>Best places to meet</h2><span class="note" id="pickNote"></span></div>
       <div class="card-bd" id="picks"></div>
+      <div class="card-bd" id="adSponsored" style="padding-top:0"></div>
     </section>
 
     <section class="card hide" id="venueCard">
@@ -1274,6 +1297,7 @@ async function findSpot(){
   renderPicks();
   renderVenueSection();
   drawMap();
+  loadAds(meetPoint.lat, meetPoint.lng);   // not awaited; ads must never hold up the answer
 
   $('#goBtn').disabled = false;
   $('#goBtn').textContent = 'Find the spot';
@@ -1307,6 +1331,142 @@ function renderSplit(active){
       <span class="mi">${shown} &middot; ${Math.round(pct)}%</span>`;
     legend.appendChild(li);
   });
+}
+
+/* ============================================================
+   ADS
+
+   Placement rule, and it is a product decision rather than a
+   technical one: a paid place never enters the ranked three. The
+   three picks are ranked on fairness and nothing else, and a
+   sponsored spot sits below them under its own label.
+
+   The reason is that the ranking is the entire product. If a business
+   can buy its way into "the evenest split nearby" then that sentence
+   stops being true, and once it stops being true the placement is not
+   worth anything to the next advertiser either. Selling the slot
+   underneath a recommendation people trust is a better business than
+   selling the recommendation.
+   ============================================================ */
+let servedAds  = [];
+const adsCounted = new Set();   // impressions are counted once per page load
+
+async function loadAds(lat, lng){
+  servedAds = [];
+  ['#adBanner', '#adFeatured', '#adSponsored'].forEach(sel => {
+    const el = $(sel); if (el) el.innerHTML = '';
+  });
+  if (!sb || !Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+  const { data, error } = await sb.rpc('serve_ads', { at_lat: lat, at_lng: lng, limit_n: 4 });
+  if (error){
+    // Nothing to tell the visitor here — an ad failing to load is not
+    // their problem, and the app is entirely usable without it.
+    console.error('ads', error);
+    return;
+  }
+  servedAds = data || [];
+  renderAds();
+}
+
+function adImpression(ad){
+  if (adsCounted.has(ad.id)) return;
+  adsCounted.add(ad.id);
+  sb.rpc('record_ad_event', {
+    ad: ad.id, kind: 'impression',
+    at_lat: meetPoint?.lat ?? null, at_lng: meetPoint?.lng ?? null
+  }).catch(e => console.error('impression', e));
+}
+
+function adClick(ad){
+  sb.rpc('record_ad_event', {
+    ad: ad.id, kind: 'click',
+    at_lat: meetPoint?.lat ?? null, at_lng: meetPoint?.lng ?? null
+  }).catch(e => console.error('click', e));
+}
+
+// Every ad carries the label and the buyer's name. Not decoration:
+// an ad that reads as editorial is the thing that costs you the trust
+// the placement is priced on.
+function adCard(ad){
+  const safeCta = /^https?:\/\//i.test(ad.cta_url || '') ? ad.cta_url : null;
+  return `
+    <div class="ad" data-ad="${ad.id}">
+      <div class="ad-head">
+        <span class="ad-tag">Ad</span>
+        <span class="biz">${esc(ad.advertiser_name || '')}</span>
+      </div>
+      ${ad.image_url ? `<img src="${esc(ad.image_url)}" alt="">` : ''}
+      <div class="ad-bd">
+        <div class="hl">${esc(ad.headline)}</div>
+        ${ad.body ? `<div class="bd">${esc(ad.body)}</div>` : ''}
+        ${safeCta
+          ? `<a class="cta" href="${esc(safeCta)}" target="_blank" rel="noopener nofollow"
+                data-adclick="${ad.id}">${esc(ad.cta_label || 'Find out more')}</a>`
+          : ''}
+      </div>
+    </div>`;
+}
+
+function sponsoredRow(ad){
+  const miles = meetPoint && ad.place_lat !== null
+    ? haversine({ lat: ad.place_lat, lng: ad.place_lng }, meetPoint).toFixed(1) + ' mi from the spot'
+    : '';
+  return `
+    <div class="choice sponsored" data-ad="${ad.id}">
+      <span class="rank">Ad</span>
+      <span class="body">
+        <span class="nm">${esc(ad.place_name || ad.headline)}</span>
+        <span class="why">${esc(ad.headline)}${ad.body ? ' — ' + esc(ad.body) : ''}</span>
+        <span class="legs">Paid placement by ${esc(ad.advertiser_name || 'a local business')}${miles ? '  ·  ' + miles : ''}</span>
+      </span>
+      <span class="acts">
+        <button class="mini" data-adspot="${ad.id}">Use this</button>
+        <a class="mini" target="_blank" rel="noopener nofollow" data-adclick="${ad.id}"
+           href="https://www.google.com/maps/dir/?api=1&destination=${ad.place_lat},${ad.place_lng}">Directions</a>
+      </span>
+    </div>`;
+}
+
+function renderAds(){
+  const first = fmt => servedAds.find(a => a.format === fmt);
+
+  const banner   = first('banner');
+  const featured = first('featured_card');
+  const spot     = first('sponsored_place');
+
+  if (banner   && $('#adBanner'))    $('#adBanner').innerHTML    = adCard(banner);
+  if (featured && $('#adFeatured'))  $('#adFeatured').innerHTML  = adCard(featured);
+  // Only offer a sponsored spot alongside picks that actually exist.
+  if (spot && lastPicks.length && $('#adSponsored')) $('#adSponsored').innerHTML = sponsoredRow(spot);
+
+  [banner, featured, spot].filter(Boolean).forEach(adImpression);
+
+  document.querySelectorAll('[data-adclick]').forEach(el => {
+    el.addEventListener('click', () => {
+      const ad = servedAds.find(a => a.id === el.dataset.adclick);
+      if (ad) adClick(ad);
+    });
+  });
+
+  document.querySelectorAll('[data-adspot]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const ad = servedAds.find(a => a.id === btn.dataset.adspot);
+      if (ad) useSponsoredSpot(ad);
+    });
+  });
+}
+
+// Choosing a sponsored spot is honest about what it costs: the legs are
+// recomputed as straight-line miles from where everybody actually is,
+// and the badge changes to say so, because we never asked the routing
+// server about this place.
+function useSponsoredSpot(ad){
+  if (!lastActive.length) return;
+  adClick(ad);
+  const place = { lat: ad.place_lat, lng: ad.place_lng, name: ad.place_name || ad.headline };
+  const legs  = lastActive.map(p => haversine(p, place));
+  choosePlace({ v: place, legs, unit: 'mi', total: legs.reduce((a,b)=>a+b,0) });
 }
 
 /* ---------- the three picks ---------- */
@@ -1367,6 +1527,7 @@ function choosePlace(s){
   renderSplit(lastActive);
   renderPicks();
   renderVenueSection();
+  renderAds();          // the sponsored row quotes a distance from the spot
   drawMap();
   map.setView([s.v.lat, s.v.lng], 15);
   toast(`Meeting at ${s.v.name}.`);
@@ -1640,10 +1801,12 @@ function renderAccount(problem){
         ? `<p class="note">Home: ${esc(homeSpot.home_label || 'saved')}</p>`
         : `<p class="note">No home address saved yet. Add one and it will fill itself in.</p>`}
       ${problem ? `<p class="note bad" style="margin:9px 0 0">${esc(problem)}</p>` : ''}
-      <button class="btn quiet" id="signOut" style="margin-top:11px">Sign out</button>
+      <button class="btn quiet" id="openAds" style="margin-top:11px">Advertising</button>
+      <button class="btn quiet" id="signOut" style="margin-top:8px">Sign out</button>
     </div>`;
 
   $('#editProfile').addEventListener('click', openProfileEditor);
+  $('#openAds').addEventListener('click', openAdvertising);
   $('#signOut').addEventListener('click', async () => {
     await sb.auth.signOut();
     session = null; profile = null; homeSpot = null;
@@ -1859,6 +2022,235 @@ async function addFriendToTrip(profileId, btn){
   toast(lat !== null
     ? `${fr.display_name} added from their saved spot.`
     : `${fr.display_name} added — type where they are starting from.`);
+}
+
+/* ============================================================
+   SELLING THE ADS
+
+   Your side of the business: who is buying, what they bought, and how
+   it performed. Everything here goes through the ordinary tables, so
+   the same rules that stop a stranger reading your numbers stop you
+   reading theirs.
+   ============================================================ */
+let advertiser = null;
+
+async function openAdvertising(){
+  $('#modalHost').innerHTML = `
+    <div class="modal" id="modalBack">
+      <div class="sheet" role="dialog" aria-modal="true" aria-label="Advertising">
+        <div class="sheet-hd">
+          <h3>Advertising</h3>
+          <button class="iconbtn" id="closeModal" aria-label="Close">&times;</button>
+        </div>
+        <div class="sheet-bd" id="adminBody"><p class="note">Loading…</p></div>
+      </div>
+    </div>`;
+  $('#closeModal').addEventListener('click', closeModal);
+  $('#modalBack').addEventListener('click', e => { if (e.target.id === 'modalBack') closeModal(); });
+  await renderAdvertising();
+}
+
+async function renderAdvertising(){
+  const host = $('#adminBody');
+  if (!host) return;
+
+  const { data: advs, error } = await sb.from('advertisers')
+    .select('id,business_name,contact_email').eq('owner_id', session.user.id).limit(1);
+  if (error){ host.innerHTML = `<p class="note bad">${esc(error.message)}</p>`; return; }
+  advertiser = advs?.[0] || null;
+
+  if (!advertiser){
+    host.innerHTML = `
+      <p class="note">Set up the business you are selling space to. One record per
+      buyer — you can run several ads under each.</p>
+      <label class="lbl" for="bizName">Business name</label>
+      <input class="inp" id="bizName" maxlength="80" placeholder="Nicky's Coffee">
+      <label class="lbl" for="bizEmail">Contact email</label>
+      <input class="inp" id="bizEmail" type="email" placeholder="owner@example.com">
+      <button class="btn mag" id="saveBiz">Create</button>`;
+    $('#saveBiz').addEventListener('click', async () => {
+      const name = $('#bizName').value.trim();
+      if (!name){ toast('Give the business a name.'); return; }
+      const btn = $('#saveBiz'); btn.disabled = true; btn.textContent = 'Creating…';
+      const { error: e2 } = await sb.from('advertisers').insert({
+        owner_id: session.user.id,
+        business_name: name,
+        contact_email: $('#bizEmail').value.trim() || null
+      });
+      if (e2){ toast(e2.message); btn.disabled = false; btn.textContent = 'Create'; return; }
+      await renderAdvertising();
+    });
+    return;
+  }
+
+  const [{ data: ads }, { data: perf }] = await Promise.all([
+    sb.from('ads').select('*').eq('advertiser_id', advertiser.id).order('created_at', { ascending:false }),
+    sb.rpc('ad_performance')
+  ]);
+  const stats = Object.fromEntries((perf || []).map(r => [r.ad_id, r]));
+
+  host.innerHTML = `
+    <p class="note"><strong>${esc(advertiser.business_name)}</strong>${
+      advertiser.contact_email ? ' · ' + esc(advertiser.contact_email) : ''}</p>
+    <button class="btn" id="newAd">New ad</button>
+    <p class="sub-hd">Campaigns</p>
+    ${(ads || []).length ? (ads || []).map(a => {
+      const s = stats[a.id] || { impressions:0, clicks:0 };
+      return `
+        <div class="frow">
+          <span class="who">
+            <span class="nm">${esc(a.headline)}</span>
+            <span class="at">${esc(a.format)} · ${esc(a.status)} · ${s.impressions} seen · ${s.clicks} clicked</span>
+          </span>
+          <button class="mini" data-toggle="${a.id}" data-status="${esc(a.status)}">
+            ${a.status === 'active' ? 'Pause' : 'Run'}</button>
+        </div>`;
+    }).join('') : `<p class="note" style="padding:8px 0">No campaigns yet.</p>`}`;
+
+  $('#newAd').addEventListener('click', openNewAd);
+  host.querySelectorAll('[data-toggle]').forEach(b => b.addEventListener('click', async () => {
+    b.disabled = true;
+    const next = b.dataset.status === 'active' ? 'paused' : 'active';
+    const { error: e3 } = await sb.from('ads').update({ status: next }).eq('id', b.dataset.toggle);
+    if (e3) toast(e3.message);
+    await renderAdvertising();
+  }));
+}
+
+function openNewAd(){
+  $('#adminBody').innerHTML = `
+    <label class="lbl" for="adFormat">What are they buying</label>
+    <select class="inp" id="adFormat">
+      <option value="banner">Banner — a card under the search</option>
+      <option value="featured_card">Featured business — a card under the result</option>
+      <option value="sponsored_place">Sponsored spot — a place shown under the three picks</option>
+    </select>
+
+    <label class="lbl" for="adHeadline">Headline</label>
+    <input class="inp" id="adHeadline" maxlength="120" placeholder="Two-for-one before 5pm">
+
+    <label class="lbl" for="adBody">Body</label>
+    <input class="inp" id="adBody" maxlength="300" placeholder="Optional line of detail">
+
+    <div id="placeFields" class="hide">
+      <label class="lbl" for="adPlaceName">Place name</label>
+      <input class="inp" id="adPlaceName" placeholder="Nicky's Coffee">
+      <label class="lbl" for="adPlaceAddr">Place address</label>
+      <input class="inp" id="adPlaceAddr" placeholder="Where it actually is">
+    </div>
+
+    <div id="ctaFields">
+      <label class="lbl" for="adCtaLabel">Button text</label>
+      <input class="inp" id="adCtaLabel" maxlength="30" placeholder="See the menu">
+      <label class="lbl" for="adCtaUrl">Button link</label>
+      <input class="inp" id="adCtaUrl" placeholder="https://…">
+      <label class="lbl" for="adImage">Picture</label>
+      <input type="file" id="adImage" accept="image/png,image/jpeg,image/webp,image/gif" style="font-size:13px;max-width:100%">
+    </div>
+
+    <label class="lbl" for="adTarget">Show it near</label>
+    <input class="inp" id="adTarget" placeholder="Town or address — blank means everywhere">
+    <label class="lbl" for="adRadius">Within how many miles</label>
+    <input class="inp" id="adRadius" type="number" min="1" max="300" value="25">
+
+    <label class="lbl" for="adCap">Most showings per day</label>
+    <input class="inp" id="adCap" type="number" min="1" placeholder="Blank for no limit">
+
+    <label class="check">
+      <input type="checkbox" id="adLive">
+      <span>Start running it now.<span class="note">Leave off to save it as a draft. Drafts are
+      never served and never counted.</span></span>
+    </label>
+
+    <button class="btn mag" id="saveAd">Save</button>
+    <button class="btn quiet" id="backToAds">Back</button>`;
+
+  const sync = () => {
+    const f = $('#adFormat').value;
+    $('#placeFields').classList.toggle('hide', f !== 'sponsored_place');
+    // A sponsored spot already has a destination: the place itself.
+    $('#ctaFields').classList.toggle('hide', f === 'sponsored_place');
+  };
+  $('#adFormat').addEventListener('change', sync); sync();
+
+  $('#backToAds').addEventListener('click', renderAdvertising);
+  $('#saveAd').addEventListener('click', saveAd);
+}
+
+async function saveAd(){
+  const btn = $('#saveAd');
+  const format   = $('#adFormat').value;
+  const headline = $('#adHeadline').value.trim();
+  if (!headline){ toast('The ad needs a headline.'); return; }
+
+  const ctaUrl = $('#adCtaUrl').value.trim();
+  if (ctaUrl && !/^https?:\/\//i.test(ctaUrl)){
+    toast('The button link must start with http:// or https://');
+    return;
+  }
+
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try{
+    const row = {
+      advertiser_id: advertiser.id,
+      format, headline,
+      body: $('#adBody').value.trim() || null,
+      status: $('#adLive').checked ? 'active' : 'draft',
+      daily_impression_cap: parseInt($('#adCap').value, 10) || null
+    };
+
+    if (format === 'sponsored_place'){
+      const pName = $('#adPlaceName').value.trim();
+      const pAddr = $('#adPlaceAddr').value.trim();
+      if (!pName || !pAddr) throw new Error('A sponsored spot needs a place name and address.');
+      const hits = await geocode(pAddr);
+      if (!hits.length) throw new Error(`Could not find "${pAddr}".`);
+      const { data: place, error: pe } = await sb.from('places').insert({
+        source: 'advertiser', name: pName,
+        lat: parseFloat(hits[0].lat), lng: parseFloat(hits[0].lon),
+        address: hits[0].display_name
+      }).select('id').single();
+      if (pe) throw new Error(pe.message);
+      row.place_id = place.id;
+      // Default the targeting to the place, which is almost always what
+      // a shop means by "show this near me".
+      row.target_lat = parseFloat(hits[0].lat);
+      row.target_lng = parseFloat(hits[0].lon);
+    } else {
+      row.cta_label = $('#adCtaLabel').value.trim() || null;
+      row.cta_url   = ctaUrl || null;
+      const file = $('#adImage').files?.[0];
+      if (file){
+        if (file.size > 3 * 1024 * 1024) throw new Error('That picture is over 3 MB.');
+        const ext  = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g,'');
+        const path = `${session.user.id}/${crypto.randomUUID()}.${ext}`;
+        const { error: ue } = await sb.storage.from('ad-images')
+          .upload(path, file, { upsert:true, contentType:file.type });
+        if (ue) throw new Error(ue.message);
+        row.image_url = sb.storage.from('ad-images').getPublicUrl(path).data.publicUrl;
+      }
+    }
+
+    const target = $('#adTarget').value.trim();
+    if (target && row.target_lat === undefined){
+      const hits = await geocode(target);
+      if (!hits.length) throw new Error(`Could not find "${target}".`);
+      row.target_lat = parseFloat(hits[0].lat);
+      row.target_lng = parseFloat(hits[0].lon);
+    }
+    const miles = parseFloat($('#adRadius').value);
+    if (Number.isFinite(miles)) row.target_radius_m = Math.round(miles * 1609.34);
+
+    const { error } = await sb.from('ads').insert(row);
+    if (error) throw new Error(error.message);
+
+    toast(row.status === 'active' ? 'Ad is running.' : 'Saved as a draft.');
+    await renderAdvertising();
+  }catch(err){
+    console.error(err);
+    toast(err.message);
+    btn.disabled = false; btn.textContent = 'Save';
+  }
 }
 
 /* ---------- editing your profile ---------- */

@@ -12,6 +12,11 @@
 #
 set -euo pipefail
 
+# macOS ships a locale that makes the postmaster go multithreaded during
+# startup, which Postgres refuses to run under. Pinning C avoids it.
+export LC_ALL=C
+export LANG=C
+
 PGBIN="/opt/homebrew/opt/postgresql@16/bin"
 [ -d "$PGBIN" ] || { echo "Postgres 16 not found. brew install postgresql@16"; exit 1; }
 export PATH="$PGBIN:$PATH"
@@ -58,6 +63,9 @@ psql -h 127.0.0.1 -p $PORT -U postgres -d wrv -q -f "$HERE/02_rls.sql"
 
 echo "==> checking friends"
 psql -h 127.0.0.1 -p $PORT -U postgres -d wrv -q -f "$HERE/03_friends.sql"
+
+echo "==> checking ads"
+psql -h 127.0.0.1 -p $PORT -U postgres -d wrv -q -f "$HERE/04_ads.sql"
 
 echo
 echo "==> re-applying migrations to prove they are safe to run twice"

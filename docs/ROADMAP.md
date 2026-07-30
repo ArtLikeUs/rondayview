@@ -9,8 +9,9 @@ Built in waves. Each one leaves the app working.
 | 3 | Sign in with a magic link; profiles with pictures | built; needs the migration run and your anon key — see `SETUP-ACCOUNTS.md` |
 | 4 | Friends — search, request, accept, and pull a friend's address into a meetup | done |
 | 5 | Suggest the best 3 places to meet, instead of a long list | done — no migration needed |
-| 6 | Ad slots, ad serving, and a page for you to manage advertisers | next |
-| 7 | App Store packaging | |
+| 6 | Ad slots, ad serving, and a page for you to manage advertisers | built; needs `20260730000003_ads.sql` run — see `SETUP-ADS.md` |
+| 7 | Publish it | blocked on your call — nothing below here can be finished without it |
+| 8 | App Store packaging | needs 7 |
 
 ## Decisions already made
 
@@ -39,6 +40,10 @@ Built in waves. Each one leaves the app working.
 - **Money.** No rates, invoices, or payments table. The right shape for that
   depends on how you actually decide to charge, and guessing now means
   rebuilding later.
+- **A paid place never enters the ranked three.** Sponsored spots sit below the
+  picks under their own label. The ranking is the product: if a business can buy
+  its way into "the evenest split nearby" then that claim is false, and the
+  placement stops being worth anything to the next buyer too.
 - **Trustworthy ad counts.** Impressions and clicks are currently reported by
   the browser, which means a determined person could inflate them from the
   developer console. That is fine while you are selling to local businesses you
