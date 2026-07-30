@@ -7,9 +7,9 @@ Built in waves. Each one leaves the app working.
 | 1 | Move into one project, under git | done |
 | 2 | Database foundation — accounts, friends, places, ads, meetups, avatars | done, tested locally, **not yet applied to Supabase** |
 | 3 | Sign in with a magic link; profiles with pictures | built; needs the migration run and your anon key — see `SETUP-ACCOUNTS.md` |
-| 4 | Friends — search, request, accept, and pull a friend's address into a meetup | built; needs `20260730000002_friends.sql` run — see `SETUP-FRIENDS.md` |
-| 5 | Suggest the best 3 places to meet, instead of a long list | next |
-| 6 | Ad slots, ad serving, and a page for you to manage advertisers | |
+| 4 | Friends — search, request, accept, and pull a friend's address into a meetup | done |
+| 5 | Suggest the best 3 places to meet, instead of a long list | done — no migration needed |
+| 6 | Ad slots, ad serving, and a page for you to manage advertisers | next |
 | 7 | App Store packaging | |
 
 ## Decisions already made
@@ -23,6 +23,13 @@ Built in waves. Each one leaves the app working.
 - **Not published yet.** Still local. This is now the binding constraint: friends
   cannot reach each other until the app has a public address, so nobody but you
   can test wave 4 properly. Decide this before wave 5 or 6.
+- **The three picks are chosen by rule, not by weighting.** Fairness is measured
+  in share-error and multiplied by 100, so any "gas stations are worse" or
+  "prefer variety" penalty small enough to be defensible gets buried under it.
+  Both are therefore hard rules: a fuel stop only appears if there are not three
+  real venues nearby, and each pick takes a different kind until the kinds run
+  out. Tuning weights instead produced a Sunoco ranked third, and two parks in
+  the top two.
 - **Sharing a home address between friends is opt-in and off by default.** It is
   a genuine disclosure — coordinates are an address — so the app says so plainly
   rather than implying the trimmed label makes it private.

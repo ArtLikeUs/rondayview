@@ -262,6 +262,28 @@ details.adv summary:hover{color:var(--mag)}
 .btn.mag:hover:not(:disabled){background:#c41a5e}
 .btn.quiet{background:#fff;border:1px solid var(--line-2);color:var(--ink-2)}
 .btn.quiet:hover{background:#fff;border-color:var(--mag);color:var(--mag)}
+/* ---------- the three picks ---------- */
+.choice{display:flex;gap:11px;padding:13px 0;border-bottom:1px solid var(--line);align-items:flex-start}
+.choice:last-child{border-bottom:0}
+.choice .rank{
+  width:23px;height:23px;border-radius:50%;background:var(--line-2);color:#fff;flex:none;
+  font-family:var(--mono);font-size:11px;display:grid;place-items:center;margin-top:2px;
+}
+.choice.on .rank{background:var(--mag)}
+.choice .body{flex:1;min-width:0;display:block}
+/* These are spans, which are inline by default — without this the name,
+   the reason and the times run together as one paragraph. */
+.choice .nm{display:block;font-weight:600;font-size:15px;line-height:1.25}
+.choice .why{display:block;font-size:12.5px;color:var(--ink-2);margin-top:3px;line-height:1.4}
+.choice .legs{display:block;font-family:var(--mono);font-size:11.5px;color:var(--ink-2);margin-top:5px}
+.choice .acts{display:flex;flex-direction:column;gap:6px;flex:none;align-items:stretch}
+.choice .acts .mini{text-align:center;text-decoration:none}
+/* Only the Directions link takes the ink colour. Scoping this to the
+   anchor keeps it from out-specifying .mini.solid's white text and
+   painting the Choose button dark-on-dark. */
+.choice .acts a.mini{color:var(--ink)}
+.choice.on .acts .mini.solid{background:var(--mag);border-color:var(--mag)}
+
 /* ---------- friends ---------- */
 .frow{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
 .frow:last-child{border-bottom:0}
@@ -394,8 +416,13 @@ details.adv summary:hover{color:var(--mag)}
       </div>
     </section>
 
+    <section class="card hide" id="pickCard">
+      <div class="card-hd"><h2>Best places to meet</h2><span class="note" id="pickNote"></span></div>
+      <div class="card-bd" id="picks"></div>
+    </section>
+
     <section class="card hide" id="venueCard">
-      <div class="card-hd"><h2>Places to actually meet</h2><span class="note" id="radiusNote"></span></div>
+      <div class="card-hd"><h2>Everything else nearby</h2><span class="note" id="radiusNote"></span></div>
       <div class="card-bd" style="padding-bottom:4px"><div class="row" id="filters"></div></div>
       <div class="card-bd" id="venues" style="padding-top:4px"></div>
     </section>
@@ -432,6 +459,10 @@ let activeFilter = 'all';
 let driveMode = true;
 let serverUrl = DEFAULT_SERVER;
 let lastMetrics = null;   // { unit:'min'|'mi', values:[...] }
+let lastRanked  = [];     // every candidate, scored, best first
+let lastPicks   = [];     // the three we actually offer
+let lastActive  = [];     // who was travelling when we worked it out
+let chosenPlace = null;   // which pick is currently the meeting point
 
 const $ = s => document.querySelector(s);
 
@@ -1044,31 +1075,121 @@ async function fetchMatrix(origins, candidates){
   return data.durations;   // seconds, [origin][candidate]
 }
 
-// Pick the venue whose real drive times split closest to what was asked for.
-function pickBest(durations, targets){
-  const n = durations.length, m = durations[0]?.length ?? 0;
-  const totals = [];
-  let minTotal = Infinity;
-  for (let j=0;j<m;j++){
-    let t=0, ok=true;
-    for (let i=0;i<n;i++){
-      const d = durations[i][j];
-      if (d === null || d === undefined){ ok=false; break; }
-      t += d;
-    }
-    totals[j] = ok ? t : null;
-    if (ok && t < minTotal) minTotal = t;
-  }
-  let best = -1, bestCost = Infinity;
-  for (let j=0;j<m;j++){
-    const tot = totals[j];
-    if (tot === null || tot <= 0) continue;
+/* ============================================================
+   RANKING PLACES
+
+   "Fair" and "worth meeting at" are not the same thing. A petrol
+   station forecourt can sit exactly on the fair point and still be a
+   miserable place to see a friend. So a candidate is judged on three
+   things at once: how close it keeps the split you asked for, how much
+   extra travel it costs everybody, and whether it is somewhere you
+   would actually want to sit.
+   ============================================================ */
+
+// Somewhere you can only stand next to a pump is a last resort, not a
+// suggestion. This is a rule rather than a scoring weight on purpose:
+// fairness is measured in share-error and multiplied by 100, so any
+// penalty small enough to be reasonable is too small to ever matter.
+// A first attempt used a 0.85 penalty and still ranked a Sunoco third,
+// above a bar and four restaurants.
+const LAST_RESORT = new Set(['fuel']);
+
+// Real drive seconds when we have them, straight-line miles otherwise.
+// Both work as "cost to get there"; only the wording changes.
+function legsFor(active, cands, durations){
+  if (durations) return cands.map((_, j) => active.map((_, i) => durations[i][j]));
+  return cands.map(c => active.map(p => haversine(p, c)));
+}
+
+function rankPlaces(active, targets, cands, durations){
+  const unit = durations ? 'min' : 'mi';
+  const legs = legsFor(active, cands, durations);
+
+  const totals = legs.map(L =>
+    L.some(x => x === null || x === undefined || !Number.isFinite(x))
+      ? null
+      : L.reduce((a,b) => a+b, 0));
+
+  const usable = totals.filter(t => t !== null && t > 0);
+  if (!usable.length) return [];
+  const minTotal = Math.min(...usable);
+
+  const scored = cands.map((v, j) => {
+    const L = legs[j], tot = totals[j];
+    if (tot === null || tot <= 0) return null;
+
+    const shares = L.map(x => x / tot);
+    // Root-mean-square gap between the split you asked for and the split
+    // you would actually get. 0 is perfect.
     let err = 0;
-    for (let i=0;i<n;i++){ const diff = durations[i][j]/tot - targets[i]; err += diff*diff; }
-    const cost = err*100 + 0.6*(tot/minTotal - 1);   // fairness first, total time second
-    if (cost < bestCost){ bestCost = cost; best = j; }
+    shares.forEach((s, i) => { const d = s - targets[i]; err += d*d; });
+    const fairErr = Math.sqrt(err / shares.length);
+
+    const detour = tot / minTotal - 1;        // 0 = nothing is closer
+
+    return {
+      v, legs: L, unit, total: tot, shares, fairErr, detour,
+      lastResort: LAST_RESORT.has(v.kind),
+      score: fairErr*100 + 0.7*detour     // fairness first, extra driving second
+    };
+  }).filter(Boolean);
+
+  scored.sort((a,b) => a.score - b.score);
+  return scored;
+}
+
+// Three parks is a worse answer than a park, a coffee shop and a bar,
+// because the point of offering three is offering a choice.
+//
+// One per kind, taken best-first, and only doubling up when there
+// genuinely are not three kinds nearby. Structural for the same reason
+// as LAST_RESORT: a nudge small enough to be defensible gets buried
+// under the fairness term. A 0.28 penalty here still returned two parks.
+function topThree(scored){
+  // Real places first. A gas station only gets a slot if there genuinely
+  // are not three other options within reach.
+  const proper = scored.filter(s => !s.lastResort);
+  const pool = proper.length >= 3 ? proper : scored;   // already sorted by score
+
+  const out = [], usedKinds = new Set();
+  for (const s of pool){
+    if (out.length >= 3) break;
+    if (usedKinds.has(s.v.kind)) continue;
+    usedKinds.add(s.v.kind);
+    out.push(s);
   }
-  return best;
+  // Fewer than three kinds around? Fill the rest with the next best.
+  for (const s of pool){
+    if (out.length >= 3) break;
+    if (!out.includes(s)) out.push(s);
+  }
+  return out;
+}
+
+// Say why this one, in words that mean something. Never claim a place
+// is fairest or closest unless it genuinely is.
+function reasonFor(s, scored){
+  const fairest  = scored.reduce((a,b) => b.fairErr < a.fairErr ? b : a);
+  const shortest = scored.reduce((a,b) => b.total   < a.total   ? b : a);
+
+  const bits = [];
+  if (s === fairest)  bits.push('the evenest split nearby');
+  if (s === shortest && s !== fairest) bits.push('the least travelling overall');
+  if (!bits.length){
+    bits.push(s.fairErr < 0.05 ? 'splits about the way you asked' : 'a workable middle');
+  }
+
+  const kindWord = {
+    coffee:'and somewhere to sit',
+    food:'and somewhere to eat',
+    bar:'and a proper bar',
+    park:'and it is outdoors',
+    fuel:'though it is only a gas station — slim pickings around here'
+  }[s.v.kind];
+  if (kindWord) bits.push(kindWord);
+
+  const out = bits.join(', ').replace(', and', ' and').replace(', though', ' though');
+  return out.charAt(0).toUpperCase() + out.slice(1) + '.';
 }
 
 /* ============================================================
@@ -1080,6 +1201,8 @@ async function findSpot(){
 
   const wsum = active.reduce((s,p)=>s+p.weight,0);
   const targets = active.map(p => p.weight/wsum);
+  lastActive = active;
+  lastRanked = []; lastPicks = []; chosenPlace = null;
 
   const geoPoint = solve(active, targets);
   meetPoint = geoPoint;
@@ -1108,11 +1231,14 @@ async function findSpot(){
     try{
       $('#spotName').textContent = 'Checking real drive times…';
       const durations = await fetchMatrix(active, candidates);
-      const idx = pickBest(durations, targets);
-      if (idx >= 0){
-        winner = candidates[idx];
-        meetPoint = { lat: winner.lat, lng: winner.lng };
-        lastMetrics = { unit:'min', values: active.map((_,i)=> durations[i][idx]/60) };
+      lastRanked = rankPlaces(active, targets, candidates, durations);
+      // Same rule for the headline spot: do not open with a forecourt.
+      const top = lastRanked.find(s => !s.lastResort) || lastRanked[0];
+      if (top){
+        winner = top.v;
+        chosenPlace = top;
+        meetPoint = { lat: top.v.lat, lng: top.v.lng };
+        lastMetrics = { unit:'min', values: top.legs.map(sec => sec/60) };
         $('#modeBadge').textContent = 'Drive time';
         $('#modeBadge').classList.add('live');
         setWhy(venues.length ? '' : `Drive times are real — this spot is genuinely fair. But the venue directory didn't answer (${venueError || 'nothing listed nearby'}), so you're getting a street address instead of a named place. Hit Find the spot again in a minute and it usually comes back.`);
@@ -1138,6 +1264,14 @@ async function findSpot(){
       : `${meetPoint.lat.toFixed(4)}, ${meetPoint.lng.toFixed(4)}`;
   }
 
+  // Straight-line mode never asked a routing server anything, so rank the
+  // venues on crow-flight legs instead. The headline point stays the
+  // geometric answer; these are real places to actually sit, near it.
+  if (!lastRanked.length && venues.length){
+    lastRanked = rankPlaces(active, targets, spreadOut(venues, meetPoint, MAX_CANDIDATES), null);
+  }
+
+  renderPicks();
   renderVenueSection();
   drawMap();
 
@@ -1175,6 +1309,69 @@ function renderSplit(active){
   });
 }
 
+/* ---------- the three picks ---------- */
+function fmtLeg(value, unit){
+  return unit === 'min' ? `${Math.round(value/60)} min` : `${value.toFixed(1)} mi`;
+}
+
+function renderPicks(){
+  const card = $('#pickCard');
+
+  // Only offer real, named places. The fallback ring of bare map points
+  // is fine for measuring, but "meet at a coordinate" is not a suggestion.
+  lastPicks = topThree(lastRanked.filter(s => s.v.name));
+
+  if (!lastPicks.length){ card.classList.add('hide'); return; }
+  card.classList.remove('hide');
+  $('#pickNote').textContent = lastPicks[0].unit === 'min' ? 'by real drive time' : 'by straight-line miles';
+
+  $('#picks').innerHTML = lastPicks.map((s, i) => {
+    const on = chosenPlace && chosenPlace.v.lat === s.v.lat && chosenPlace.v.lng === s.v.lng;
+    const legs = s.legs.map((x, k) =>
+      `${esc(lastActive[k]?.name ?? 'Person ' + (k+1))} ${fmtLeg(x, s.unit)}`).join('  ·  ');
+    return `
+      <div class="choice${on ? ' on' : ''}">
+        <span class="rank">${i+1}</span>
+        <span class="body">
+          <span class="nm">${esc(s.v.name)}</span>
+          <span class="why">${esc(reasonFor(s, lastRanked))}</span>
+          <span class="legs">${legs}</span>
+        </span>
+        <span class="acts">
+          <button class="mini solid" data-choose="${i}" ${on ? 'disabled' : ''}>${on ? 'Chosen' : 'Choose'}</button>
+          <a class="mini" target="_blank" rel="noopener"
+             href="https://www.google.com/maps/dir/?api=1&destination=${s.v.lat},${s.v.lng}">Directions</a>
+        </span>
+      </div>`;
+  }).join('');
+
+  $('#picks').querySelectorAll('[data-choose]').forEach(b =>
+    b.addEventListener('click', () => choosePlace(lastPicks[+b.dataset.choose])));
+}
+
+// Making a pick the meeting point re-splits the whole trip around it,
+// so the bar, the legend and the copied plan all describe the place you
+// actually chose rather than the one we opened with.
+function choosePlace(s){
+  if (!s) return;
+  chosenPlace = s;
+  meetPoint = { lat: s.v.lat, lng: s.v.lng };
+  lastMetrics = {
+    unit: s.unit,
+    values: s.unit === 'min' ? s.legs.map(x => x/60) : s.legs.slice()
+  };
+  $('#spotName').textContent = s.v.name;
+  $('#modeBadge').textContent = s.unit === 'min' ? 'Drive time' : 'Straight line';
+  $('#modeBadge').classList.toggle('live', s.unit === 'min');
+
+  renderSplit(lastActive);
+  renderPicks();
+  renderVenueSection();
+  drawMap();
+  map.setView([s.v.lat, s.v.lng], 15);
+  toast(`Meeting at ${s.v.name}.`);
+}
+
 function renderVenueSection(){
   $('#venueCard').classList.remove('hide');
   venues.forEach(v => v.dist = haversine(v, meetPoint));
@@ -1203,7 +1400,12 @@ function renderVenueSection(){
 }
 
 function renderVenues(){
-  const list = venues.filter(v=>activeFilter==='all'||v.kind===activeFilter).slice(0,14);
+  // No point listing the three picks again directly underneath themselves.
+  const picked = new Set(lastPicks.map(s => `${s.v.lat},${s.v.lng}`));
+  const list = venues
+    .filter(v => !picked.has(`${v.lat},${v.lng}`))
+    .filter(v => activeFilter==='all' || v.kind===activeFilter)
+    .slice(0,14);
   $('#venues').innerHTML = '';
   list.forEach(v=>{
     const el = document.createElement('div');
