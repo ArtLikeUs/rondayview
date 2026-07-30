@@ -223,6 +223,49 @@ details.adv summary{
 details.adv summary::-webkit-details-marker{display:none}
 details.adv summary:hover{color:var(--mag)}
 
+/* ---------- account ---------- */
+.acct{display:flex;align-items:center;gap:11px;padding:13px 14px}
+.avatar{
+  width:42px;height:42px;border-radius:50%;flex:none;background:var(--line);
+  display:grid;place-items:center;overflow:hidden;
+  font-family:var(--display);font-weight:700;font-size:17px;color:var(--ink-2);
+}
+.avatar img{width:100%;height:100%;object-fit:cover;display:block}
+.acct .who{flex:1;min-width:0}
+.acct .who .nm{font-weight:600;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.acct .who .at{font-family:var(--mono);font-size:12px;color:var(--ink-2)}
+
+.modal{
+  position:fixed;inset:0;background:rgba(34,24,51,.55);z-index:9998;
+  display:grid;place-items:center;padding:16px;
+}
+.modal .sheet{
+  background:var(--card);border-radius:16px;width:100%;max-width:420px;
+  max-height:88vh;overflow-y:auto;box-shadow:0 20px 60px -20px rgba(34,24,51,.6);
+}
+.sheet-hd{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:15px 16px 0}
+.sheet-hd h3{margin:0;font-family:var(--display);font-weight:700;font-size:20px;letter-spacing:-.02em}
+.sheet-bd{padding:6px 16px 18px}
+.lbl{
+  display:block;font-family:var(--mono);font-size:10.5px;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--ink-2);margin:15px 0 6px;
+}
+.inp{width:100%;border:1px solid var(--line-2);border-radius:10px;padding:10px 11px;background:#fff;font-size:16px}
+.inp:focus{outline:none;border-color:var(--mag)}
+.btn{
+  width:100%;border:0;border-radius:11px;background:var(--ink);color:#fff;
+  font-weight:600;font-size:15px;padding:13px;margin-top:15px;
+}
+.btn:hover:not(:disabled){background:#3a2b56}
+.btn:disabled{background:var(--line-2);cursor:not-allowed}
+.btn.mag{background:var(--mag)}
+.btn.mag:hover:not(:disabled){background:#c41a5e}
+.btn.quiet{background:#fff;border:1px solid var(--line-2);color:var(--ink-2)}
+.btn.quiet:hover{background:#fff;border-color:var(--mag);color:var(--mag)}
+.avatar-edit{display:flex;align-items:center;gap:13px;margin-top:6px}
+.avatar-edit .avatar{width:64px;height:64px;font-size:24px}
+.avatar-edit .pick{flex:1;min-width:0}
+
 .toast{
   position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(80px);
   background:var(--ink);color:#fff;padding:11px 18px;border-radius:99px;font-size:13.5px;
@@ -249,6 +292,11 @@ details.adv summary:hover{color:var(--mag)}
 
 <div class="wrap">
   <div class="col-left">
+
+    <section class="card" id="acctCard">
+      <div class="card-hd"><h2>Your account</h2><span class="note" id="acctNote"></span></div>
+      <div id="acctBody"></div>
+    </section>
 
     <section class="card">
       <div class="card-hd"><h2>Who's coming</h2><span class="note" id="countNote">2 of 4</span></div>
@@ -326,8 +374,10 @@ details.adv summary:hover{color:var(--mag)}
 </div>
 
 <div class="toast" id="toast"></div>
+<div id="modalHost"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
 /* ============================================================
    We Rondayview
@@ -1163,6 +1213,339 @@ $('#copyBtn').addEventListener('click', async () => {
   }catch(e){ prompt('Copy this:', text); }
 });
 
+/* ============================================================
+   ACCOUNTS
+
+   Sign-in is a link emailed to you. There is no password here, so
+   there is no password to leak, reset, or remember.
+
+   The anon key below is public on purpose — it identifies the
+   project, it does not grant access. What you are allowed to read
+   and write is decided by the row-level security rules in the
+   database, not by holding this string.
+   ============================================================ */
+const SUPABASE_URL = 'https://nddzplxlufiqckqyufbm.supabase.co';
+const DEFAULT_ANON_KEY = '';   // paste your project's anon key here to bake it in
+
+let anonKey  = DEFAULT_ANON_KEY;
+let sb       = null;   // the Supabase client, once we have a key
+let session  = null;   // who is signed in, if anyone
+let profile  = null;   // their public profile row
+let homeSpot = null;   // their saved home address, never shown to anyone else
+
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => (
+  { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]
+));
+
+const initials = name => String(name || '?').trim().slice(0,1).toUpperCase();
+
+function avatarHtml(p, cls=''){
+  return p?.avatar_url
+    ? `<span class="avatar ${cls}"><img src="${esc(p.avatar_url)}" alt=""></span>`
+    : `<span class="avatar ${cls}">${esc(initials(p?.display_name))}</span>`;
+}
+
+/* ---------- start-up ---------- */
+async function initAuth(){
+  const savedKey = await store.get('wr_anon_key');
+  if (savedKey) anonKey = savedKey;
+
+  if (!anonKey){ renderAccount(); return; }
+  if (!window.supabase){
+    renderAccount('The sign-in library did not load. Check your connection and refresh.');
+    return;
+  }
+
+  sb = window.supabase.createClient(SUPABASE_URL, anonKey, {
+    auth: { persistSession:true, autoRefreshToken:true, detectSessionInUrl:true }
+  });
+
+  // Fires once on load with whatever session already exists, and again
+  // whenever you arrive back from an email link or sign out.
+  sb.auth.onAuthStateChange(async (_event, s) => {
+    const changed = (s?.user?.id || null) !== (session?.user?.id || null);
+    session = s;
+    if (changed){
+      await loadProfile();
+      renderAccount();
+      if (session) toast(`Signed in as ${profile?.display_name || session.user.email}`);
+    }
+  });
+
+  const { data } = await sb.auth.getSession();
+  session = data.session;
+  await loadProfile();
+  renderAccount();
+}
+
+async function loadProfile(){
+  profile = null; homeSpot = null;
+  if (!sb || !session) return;
+
+  const { data:p, error } = await sb
+    .from('profiles').select('id,handle,display_name,avatar_url')
+    .eq('id', session.user.id).maybeSingle();
+
+  if (error){
+    console.error('profile load failed', error);
+    // The most likely cause by far: the migration has not been run yet.
+    renderAccount('Signed in, but the database tables are missing. Run the foundation migration.');
+    return;
+  }
+  profile = p;
+
+  const { data:priv } = await sb
+    .from('profile_private').select('home_label,home_lat,home_lng')
+    .eq('id', session.user.id).maybeSingle();
+
+  if (priv && priv.home_lat !== null && priv.home_lng !== null) homeSpot = priv;
+  applyHome();
+}
+
+// Fill the first empty person with your saved address, so signing in
+// means one less thing to type. Never overwrites something already set.
+function applyHome(){
+  if (!homeSpot) return;
+  const me = people[0];
+  if (!me || me.lat !== null) return;
+  me.lat = homeSpot.home_lat;
+  me.lng = homeSpot.home_lng;
+  me.label = homeSpot.home_label || '';
+  me.query = homeSpot.home_label || '';
+  if (profile?.display_name && me.name === 'Me') me.name = profile.display_name;
+  renderPeople(); refreshState();
+}
+
+/* ---------- the card ---------- */
+function renderAccount(problem){
+  const host = $('#acctBody');
+  const note = $('#acctNote');
+
+  // 1. No key yet — nothing can happen until the project is connected.
+  if (!anonKey){
+    note.textContent = 'Not connected';
+    host.innerHTML = `
+      <div class="card-bd">
+        <p class="note">Accounts, friends and profile pictures need this app connected
+        to your Supabase project. Paste your project's <strong>anon public</strong> key
+        once and it will be remembered.</p>
+        <div class="field">
+          <input id="keyInput" placeholder="eyJhbGciOi..." autocomplete="off" spellcheck="false" aria-label="Supabase anon key">
+          <button id="keySave">Save</button>
+        </div>
+        <p class="note" style="margin:9px 0 0">Find it in Supabase under
+        Project Settings &rarr; API Keys &rarr; anon public. It is safe to paste here —
+        it is public by design.</p>
+      </div>`;
+    $('#keySave').addEventListener('click', async () => {
+      const v = $('#keyInput').value.trim();
+      if (!v){ toast('Paste the key first.'); return; }
+      await store.set('wr_anon_key', v);
+      anonKey = v;
+      toast('Connected. Setting up…');
+      await initAuth();
+    });
+    return;
+  }
+
+  // 2. Connected, nobody signed in.
+  if (!session){
+    note.textContent = 'Signed out';
+    host.innerHTML = `
+      <div class="card-bd">
+        <p class="note">Sign in to save your address, keep your meetups, and add friends.
+        No password — we email you a link.</p>
+        <div class="field">
+          <input id="emailInput" type="email" placeholder="you@example.com"
+                 autocomplete="email" inputmode="email" aria-label="Your email address">
+          <button id="sendLink">Send link</button>
+        </div>
+        ${problem ? `<p class="note bad" style="margin:9px 0 0">${esc(problem)}</p>` : ''}
+      </div>`;
+    const send = async () => {
+      const email = $('#emailInput').value.trim();
+      if (!/^\S+@\S+\.\S+$/.test(email)){ toast('That does not look like an email address.'); return; }
+      const btn = $('#sendLink');
+      btn.disabled = true; btn.textContent = 'Sending…';
+      const { error } = await sb.auth.signInWithOtp({
+        email,
+        options:{ emailRedirectTo: location.origin + location.pathname }
+      });
+      btn.disabled = false; btn.textContent = 'Send link';
+      if (error){ console.error(error); toast(error.message || 'Could not send the link.'); return; }
+      host.innerHTML = `
+        <div class="card-bd">
+          <p class="note ok">Check ${esc(email)}.</p>
+          <p class="note" style="margin:9px 0 0">We sent a sign-in link. Open it on this
+          device and you will land back here signed in. It expires in an hour.</p>
+        </div>`;
+    };
+    $('#sendLink').addEventListener('click', send);
+    $('#emailInput').addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
+    return;
+  }
+
+  // 3. Signed in.
+  note.textContent = '';
+  host.innerHTML = `
+    <div class="acct">
+      ${avatarHtml(profile)}
+      <span class="who">
+        <span class="nm">${esc(profile?.display_name || session.user.email)}</span>
+        <span class="at">${profile ? '@' + esc(profile.handle) : esc(session.user.email)}</span>
+      </span>
+      <button class="iconbtn" id="editProfile" aria-label="Edit your profile" title="Edit profile">&#9998;</button>
+    </div>
+    <div class="card-bd" style="padding-top:0">
+      ${homeSpot
+        ? `<p class="note">Home: ${esc(homeSpot.home_label || 'saved')}</p>`
+        : `<p class="note">No home address saved yet. Add one and it will fill itself in.</p>`}
+      ${problem ? `<p class="note bad" style="margin:9px 0 0">${esc(problem)}</p>` : ''}
+      <button class="btn quiet" id="signOut" style="margin-top:11px">Sign out</button>
+    </div>`;
+
+  $('#editProfile').addEventListener('click', openProfileEditor);
+  $('#signOut').addEventListener('click', async () => {
+    await sb.auth.signOut();
+    session = null; profile = null; homeSpot = null;
+    renderAccount();
+    toast('Signed out.');
+  });
+}
+
+/* ---------- editing your profile ---------- */
+function closeModal(){ $('#modalHost').innerHTML = ''; }
+
+function openProfileEditor(){
+  if (!profile){ toast('Your profile is still loading.'); return; }
+
+  $('#modalHost').innerHTML = `
+    <div class="modal" id="modalBack">
+      <div class="sheet" role="dialog" aria-modal="true" aria-label="Edit your profile">
+        <div class="sheet-hd">
+          <h3>Your profile</h3>
+          <button class="iconbtn" id="closeModal" aria-label="Close">&times;</button>
+        </div>
+        <div class="sheet-bd">
+          <span class="lbl">Picture</span>
+          <div class="avatar-edit">
+            <span id="avPreview">${avatarHtml(profile)}</span>
+            <span class="pick">
+              <input type="file" id="avFile" accept="image/png,image/jpeg,image/webp,image/gif"
+                     style="font-size:13px;max-width:100%" aria-label="Choose a profile picture">
+              <p class="note" style="margin:6px 0 0">JPG, PNG, WebP or GIF. Up to 2 MB.</p>
+            </span>
+          </div>
+
+          <label class="lbl" for="pName">Display name</label>
+          <input class="inp" id="pName" maxlength="60" value="${esc(profile.display_name)}">
+
+          <label class="lbl" for="pHandle">Handle</label>
+          <input class="inp" id="pHandle" maxlength="24" value="${esc(profile.handle)}">
+          <p class="note" style="margin:6px 0 0">Letters, numbers and underscores. This is how
+          friends will find you.</p>
+
+          <label class="lbl" for="pHome">Home address</label>
+          <input class="inp" id="pHome" placeholder="Address, cross streets, or city"
+                 value="${esc(homeSpot?.home_label || '')}">
+          <p class="note" style="margin:6px 0 0">Only you can ever see this. It is stored apart
+          from your public profile so it cannot leak with it.</p>
+
+          <button class="btn mag" id="saveProfile">Save</button>
+        </div>
+      </div>
+    </div>`;
+
+  $('#closeModal').addEventListener('click', closeModal);
+  $('#modalBack').addEventListener('click', e => { if (e.target.id === 'modalBack') closeModal(); });
+  document.addEventListener('keydown', function onEsc(e){
+    if (e.key === 'Escape'){ closeModal(); document.removeEventListener('keydown', onEsc); }
+  });
+
+  $('#avFile').addEventListener('change', e => {
+    const f = e.target.files?.[0];
+    if (f) $('#avPreview').innerHTML = `<span class="avatar"><img src="${URL.createObjectURL(f)}" alt=""></span>`;
+  });
+
+  $('#saveProfile').addEventListener('click', saveProfile);
+}
+
+async function uploadAvatar(file){
+  if (file.size > 2 * 1024 * 1024) throw new Error('That picture is over 2 MB. Try a smaller one.');
+
+  const ext  = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g,'');
+  // The folder has to be your own user id — that is exactly what the
+  // storage rule checks, so nobody can overwrite anybody else's face.
+  const path = `${session.user.id}/avatar.${ext}`;
+
+  const { error } = await sb.storage.from('avatars')
+    .upload(path, file, { upsert:true, contentType:file.type });
+  if (error) throw new Error(error.message || 'The picture would not upload.');
+
+  const { data } = sb.storage.from('avatars').getPublicUrl(path);
+  // The path never changes, so browsers would happily show the old picture
+  // forever. The stamp is what makes a new upload actually appear.
+  return `${data.publicUrl}?v=${Date.now()}`;
+}
+
+async function saveProfile(){
+  const btn = $('#saveProfile');
+  const name   = $('#pName').value.trim();
+  const handle = $('#pHandle').value.trim();
+  const home   = $('#pHome').value.trim();
+
+  if (!name){ toast('A display name is required.'); return; }
+  if (!/^[a-zA-Z0-9_]{3,24}$/.test(handle)){
+    toast('Handles are 3–24 letters, numbers or underscores.');
+    return;
+  }
+
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try{
+    const patch = { display_name:name, handle };
+
+    const file = $('#avFile').files?.[0];
+    if (file) patch.avatar_url = await uploadAvatar(file);
+
+    const { error } = await sb.from('profiles').update(patch).eq('id', session.user.id);
+    if (error){
+      // 23505 is Postgres for "somebody already has that".
+      if (error.code === '23505') throw new Error(`@${handle} is already taken.`);
+      throw new Error(error.message || 'Could not save your profile.');
+    }
+
+    // The address is geocoded here rather than stored as loose text, so it
+    // can actually be used as a starting point.
+    let priv = { home_label:null, home_lat:null, home_lng:null };
+    if (home){
+      if (home === homeSpot?.home_label){
+        priv = { home_label:homeSpot.home_label, home_lat:homeSpot.home_lat, home_lng:homeSpot.home_lng };
+      } else {
+        const hits = await geocode(home);
+        if (!hits.length) throw new Error(`Could not find "${home}". Try adding the city.`);
+        priv = {
+          home_label: hits[0].display_name,
+          home_lat: parseFloat(hits[0].lat),
+          home_lng: parseFloat(hits[0].lon)
+        };
+      }
+    }
+
+    const { error: pErr } = await sb.from('profile_private')
+      .upsert({ id: session.user.id, ...priv });
+    if (pErr) throw new Error(pErr.message || 'Could not save your address.');
+
+    await loadProfile();
+    renderAccount();
+    closeModal();
+    toast('Saved.');
+  }catch(err){
+    console.error(err);
+    toast(err.message);
+    btn.disabled = false; btn.textContent = 'Save';
+  }
+}
+
 /* ---------- wire up ---------- */
 $('#addBtn').addEventListener('click', () => {
   if (people.length >= MAX) return;
@@ -1179,6 +1562,7 @@ $('#goBtn').addEventListener('click', findSpot);
   $('#fnUrl').value = serverUrl;
   renderMode();
   setTimeout(()=>map.invalidateSize(), 200);
+  initAuth();            // deliberately not awaited — the map should not wait on the network
 })();
 </script>
 </body>

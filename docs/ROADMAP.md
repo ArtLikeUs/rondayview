@@ -6,8 +6,8 @@ Built in waves. Each one leaves the app working.
 |---|---|---|
 | 1 | Move into one project, under git | done |
 | 2 | Database foundation — accounts, friends, places, ads, meetups, avatars | done, tested locally, **not yet applied to Supabase** |
-| 3 | Sign in with a magic link; profiles with pictures | next |
-| 4 | Friends — search, request, accept, and pull a friend's address into a meetup | |
+| 3 | Sign in with a magic link; profiles with pictures | built; needs the migration run and your anon key — see `SETUP-ACCOUNTS.md` |
+| 4 | Friends — search, request, accept, and pull a friend's address into a meetup | next |
 | 5 | Suggest the best 3 places to meet, instead of a long list | |
 | 6 | Ad slots, ad serving, and a page for you to manage advertisers | |
 | 7 | App Store packaging | |
