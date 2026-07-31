@@ -67,6 +67,9 @@ psql -h 127.0.0.1 -p $PORT -U postgres -d wrv -q -f "$HERE/03_friends.sql"
 echo "==> checking ads"
 psql -h 127.0.0.1 -p $PORT -U postgres -d wrv -q -f "$HERE/04_ads.sql"
 
+echo "==> checking rate limits and the geocode cache"
+psql -h 127.0.0.1 -p $PORT -U postgres -d wrv -q -f "$HERE/05_limits.sql"
+
 echo
 echo "==> re-applying migrations to prove they are safe to run twice"
 for m in "$ROOT"/supabase/migrations/*.sql; do

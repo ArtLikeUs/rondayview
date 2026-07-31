@@ -639,13 +639,48 @@ function solve(pts, targets){
 /* ============================================================
    GEOCODING
    ============================================================ */
+// Address lookups go through our own server, which caches them and
+// identifies itself properly to OpenStreetMap. Asking from every
+// visitor's browser instead is how a free service ends up blocking the
+// whole app at once rather than one impatient user.
+//
+// The direct call is kept only as a fallback for the seconds when our
+// own function is down. Losing address search entirely because a
+// server hiccuped would be a worse trade than one uncached request.
+async function askServer(payload){
+  const res = await fetch(serverUrl, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json' },
+    body: JSON.stringify(payload)
+  });
+  const data = await res.json().catch(()=>({}));
+  if (!res.ok) throw new Error(data.error || 'lookup failed');
+  return data;
+}
+
 async function geocode(q){
+  if (serverUrl){
+    try{
+      const { results } = await askServer({ kind:'geocode', q });
+      return results || [];
+    }catch(err){
+      console.error('geocode via server failed, falling back', err);
+      if (/lot of lookups/i.test(err.message)) throw err;   // a real limit, not an outage
+    }
+  }
   const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&q=' + encodeURIComponent(q);
   const res = await fetch(url, { headers:{ 'Accept':'application/json' } });
   if (!res.ok) throw new Error('search failed');
   return res.json();
 }
+
 async function reverse(lat,lng){
+  if (serverUrl){
+    try{
+      const { result } = await askServer({ kind:'reverse', lat, lng });
+      if (result?.display_name) return result.display_name;
+    }catch(err){ console.error('reverse via server failed, falling back', err); }
+  }
   try{
     const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`,
       { headers:{ 'Accept':'application/json' } });

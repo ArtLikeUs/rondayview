@@ -4,13 +4,26 @@
 // This runs on Supabase's servers, NOT in the browser.
 // It is the only thing that ever sees your OpenRouteService key.
 //
-// It now handles two jobs, chosen with the "kind" field:
-//   { kind: "matrix", origins, destinations }  -> drive times
-//   { kind: "venues", lat, lng, radius }       -> nearby places
+// It handles four jobs, chosen with the "kind" field:
+//   { kind: "matrix",  origins, destinations } -> drive times
+//   { kind: "venues",  lat, lng, radius }      -> nearby places
+//   { kind: "geocode", q }                     -> address to coordinates
+//   { kind: "reverse", lat, lng }              -> coordinates to address
 //
-// Venues moved here because Overpass throttles anonymous browser
-// traffic aggressively. Asked from a server, with a real User-Agent,
-// it behaves. It also sidesteps browser CORS entirely.
+// Everything that talks to somebody else's service lives here rather
+// than in the browser, for two different reasons.
+//
+// Overpass and Nominatim are volunteer-run and throttle anonymous
+// browser traffic hard. Asked from one server, with a real User-Agent
+// and a cache in front, they behave. Left in the browser, a few
+// hundred visitors can get the whole app blocked at once — not one
+// user at a time, all of them.
+//
+// OpenRouteService is different: the key is ours and the quota is
+// 2,500 lookups a day. This function's address is in the page source
+// and it must accept unauthenticated calls, because the app works
+// signed out. So the rate limiter below is the only thing between a
+// bored person and a day with no drive times.
 //
 // Deploy:
 //   supabase secrets set ORS_API_KEY=your_key_here
@@ -18,6 +31,8 @@
 // ============================================================
 
 const ORS_KEY = Deno.env.get("ORS_API_KEY");
+const SB_URL  = Deno.env.get("SUPABASE_URL");
+const SB_KEY  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
 const MAX_ORIGINS = 4;
 const MAX_DESTINATIONS = 30;
@@ -29,7 +44,23 @@ const OVERPASS_MIRRORS = [
   "https://overpass.private.coffee/api/interpreter",
 ];
 
-const UA = "WeRondayview/1.0 (personal meeting-point app)";
+const NOMINATIM = "https://nominatim.openstreetmap.org";
+
+// Nominatim's terms ask for an application that can be identified and
+// contacted. A generic browser User-Agent is exactly what they ask you
+// not to send.
+const UA = "WeRondayview/1.0 (https://rondayview.com; beholdalu@gmail.com)";
+
+// Per caller, per hour. Generous for a person, tight for a script.
+// Matrix is the strict one because it is the only job that spends a
+// quota we pay for in outages.
+const LIMITS: Record<string, number> = {
+  matrix:  40,
+  venues:  80,
+  geocode: 200,
+  reverse: 200,
+};
+const WINDOW_SECONDS = 3600;
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -42,6 +73,66 @@ function json(body: unknown, status = 200): Response {
     status,
     headers: { ...CORS, "Content-Type": "application/json" },
   });
+}
+
+// ---------- talking to our own database ----------
+// Uses the service role key, which only ever exists here. These
+// functions are granted to service_role alone, so nothing reachable
+// from a browser can count, or uncount, a request.
+async function rpc(name: string, args: Record<string, unknown>): Promise<unknown> {
+  if (!SB_URL || !SB_KEY) return null;
+  try {
+    const res = await fetch(`${SB_URL}/rest/v1/rpc/${name}`, {
+      method: "POST",
+      headers: {
+        "apikey": SB_KEY,
+        "Authorization": `Bearer ${SB_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(args),
+      signal: AbortSignal.timeout(4000),
+    });
+    if (!res.ok) {
+      console.error(`rpc ${name} returned`, res.status, await res.text());
+      return null;
+    }
+    return await res.json();
+  } catch (e) {
+    console.error(`rpc ${name} failed:`, e);
+    return null;
+  }
+}
+
+// The address the request came from, as far as we can tell.
+function callerKey(req: Request): string {
+  const fwd = req.headers.get("x-forwarded-for") || "";
+  const ip = fwd.split(",")[0].trim() || req.headers.get("cf-connecting-ip") || "unknown";
+  return ip;
+}
+
+// Returns null when the caller may proceed, or a response when they may not.
+//
+// Deliberately fails OPEN. If the database is unreachable the honest
+// choice is to serve the request: a rate limiter that takes the app
+// down when it has a bad minute has caused a worse outage than the
+// abuse it was built to stop.
+async function limited(req: Request, kind: string): Promise<Response | null> {
+  const max = LIMITS[kind];
+  if (!max) return null;
+
+  const allowed = await rpc("rate_limit_hit", {
+    bucket_key: `${kind}:${callerKey(req)}`,
+    max_hits: max,
+    window_seconds: WINDOW_SECONDS,
+  });
+
+  if (allowed === false) {
+    console.error(`rate limited ${kind} for ${callerKey(req)}`);
+    return json({
+      error: "That is a lot of lookups in one hour. Give it a few minutes.",
+    }, 429);
+  }
+  return null;
 }
 
 function isCoord(p: unknown): boolean {
@@ -177,6 +268,83 @@ out center 150;`;
   return json({ error: `No venue directory answered (${tried.join("; ")})` }, 502);
 }
 
+// ---------- jobs 3 and 4: addresses ----------
+//
+// Cache first, always. An address that has been looked up once is
+// answered from our own table for six months, which is both faster for
+// the person waiting and the difference between being a good citizen
+// of a free service and being the reason it blocks us.
+async function handleGeocode(body: any): Promise<Response> {
+  const q = String(body?.q ?? "").trim();
+  if (q.length < 2) return json({ error: "Give me something to search for." }, 400);
+  if (q.length > 200) return json({ error: "That search is too long." }, 400);
+
+  const key = `s:${q.toLowerCase()}`;
+  const cached = await rpc("geocode_lookup", { key });
+  if (cached) return json({ results: cached, cached: true });
+
+  let upstream: Response;
+  try {
+    upstream = await fetch(
+      `${NOMINATIM}/search?format=jsonv2&limit=5&q=${encodeURIComponent(q)}`,
+      { headers: { "User-Agent": UA, "Accept": "application/json" },
+        signal: AbortSignal.timeout(10000) },
+    );
+  } catch (e) {
+    console.error("nominatim unreachable:", e);
+    return json({ error: "The address lookup service is not answering." }, 502);
+  }
+
+  if (!upstream.ok) {
+    console.error("nominatim returned", upstream.status, await upstream.text());
+    return json({ error: "The address lookup service returned an error." }, 502);
+  }
+
+  const results = await upstream.json();
+  if (Array.isArray(results) && results.length) {
+    await rpc("geocode_store", { key, kind_in: "search", payload: results });
+  }
+  return json({ results, cached: false });
+}
+
+async function handleReverse(body: any): Promise<Response> {
+  const lat = Number(body?.lat), lng = Number(body?.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) ||
+      Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+    return json({ error: "lat and lng must be valid coordinates." }, 400);
+  }
+
+  // Rounded to about 10 metres, so near-identical taps share an answer
+  // instead of each costing a request.
+  const key = `r:${lat.toFixed(4)},${lng.toFixed(4)}`;
+  const cached = await rpc("geocode_lookup", { key });
+  if (cached) return json({ result: cached, cached: true });
+
+  let upstream: Response;
+  try {
+    upstream = await fetch(
+      `${NOMINATIM}/reverse?format=jsonv2&lat=${lat}&lon=${lng}`,
+      { headers: { "User-Agent": UA, "Accept": "application/json" },
+        signal: AbortSignal.timeout(10000) },
+    );
+  } catch (e) {
+    console.error("nominatim reverse unreachable:", e);
+    return json({ error: "The address lookup service is not answering." }, 502);
+  }
+
+  if (!upstream.ok) {
+    console.error("nominatim reverse returned", upstream.status);
+    return json({ error: "The address lookup service returned an error." }, 502);
+  }
+
+  const result = await upstream.json();
+  if (result && result.display_name) {
+    await rpc("geocode_store", { key, kind_in: "reverse", payload: result });
+  }
+  return json({ result, cached: false });
+}
+
+
 // ---------- router ----------
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -192,7 +360,23 @@ Deno.serve(async (req: Request) => {
   // No "kind" means an older client asking for drive times.
   const kind = body?.kind ?? "matrix";
 
-  if (kind === "venues") return handleVenues(body);
-  if (kind === "matrix") return handleMatrix(body);
-  return json({ error: `Unknown kind "${kind}".` }, 400);
+  const handlers: Record<string, (b: any) => Promise<Response>> = {
+    matrix:  handleMatrix,
+    venues:  handleVenues,
+    geocode: handleGeocode,
+    reverse: handleReverse,
+  };
+
+  const handler = handlers[kind];
+  if (!handler) return json({ error: `Unknown kind "${kind}".` }, 400);
+
+  const blocked = await limited(req, kind);
+  if (blocked) return blocked;
+
+  // Clear out stale counters now and then. One in roughly two hundred
+  // requests, which is often enough to keep the table small and rare
+  // enough that nobody waits for it.
+  if (Math.random() < 0.005) rpc("rate_limits_sweep", {});
+
+  return handler(body);
 });
