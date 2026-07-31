@@ -49,20 +49,31 @@ The app also stays honest when somebody takes the sponsored option: choosing it
 recalculates the split for real. In testing that turned an even split into
 76/24, and the app said so rather than quietly keeping the old number on screen.
 
-### The counting is honest, but not yet auditable
+### The counting is now defensible
 
-Impressions and clicks are reported by the browser. Anyone who knows how to
-open the developer console could inflate them.
+This used to be a caveat. It is not any more.
 
-That is genuinely fine for selling to local businesses you know, and it is the
-normal place to start. What it is not fine for is a buyer who audits their
-spend, or any buyer big enough to have a competitor motivated to run your
-numbers up. Before that, the counting has to move somewhere the browser cannot
-reach.
+Impressions and clicks are recorded behind the Edge Function using the service
+role key, which the page never sees. The browser can **ask** for an event to be
+recorded; it cannot record one, and it is not told whether the ask counted.
+Being told would hand anyone trying to game it exactly the feedback they need.
 
-Some of that is already done: the daily cap, the date window and the
-active check are all enforced in the database, so a stale page cannot keep
-billing an ended campaign, and an ad cannot be served past its allowance.
+Two people seeing an ad is worth twice one person seeing it twice, so repeats
+from the same caller are dropped: an impression counts once per half hour, a
+click once per five minutes. Clicking twice is impatience; clicking two hundred
+times is not an audience.
+
+If the database does not answer, the event is **not** recorded. An uncounted
+impression is a rounding error; a double-counted one is a wrong invoice.
+
+The rest was already enforced in the database: the daily cap, the date window
+and the active check, so a stale page cannot keep billing an ended campaign and
+an ad cannot be served past its allowance.
+
+What you can honestly tell a buyer: these are unique views per half hour from
+distinct callers, counted server-side, and neither you nor they can edit the
+number. What it still is not: a third-party audited figure. Nobody at your scale
+has one.
 
 ---
 

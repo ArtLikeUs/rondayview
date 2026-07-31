@@ -1424,20 +1424,36 @@ async function loadAds(lat, lng){
   renderAds();
 }
 
+// Counting happens on the server, not here. This page can ask for an
+// event to be recorded; it cannot record one, and it is not told
+// whether the ask counted. That is deliberate — the moment a browser
+// can write to the tally, the tally is worth nothing to an advertiser.
+//
+// Fire and forget. An ad that fails to report is a rounding error; an
+// ad that blocks the page is a bug.
+function reportAd(adId, event){
+  if (!serverUrl) return;
+  fetch(serverUrl, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json' },
+    body: JSON.stringify({
+      kind:'ad_event', ad: adId, event,
+      lat: meetPoint?.lat ?? null, lng: meetPoint?.lng ?? null
+    }),
+    keepalive: true            // survives the tab closing on a click-through
+  }).catch(e => console.error('ad event', e));
+}
+
 function adImpression(ad){
+  // Local guard so one render does not send the same ask repeatedly.
+  // The real deduplication is on the server; this just saves requests.
   if (adsCounted.has(ad.id)) return;
   adsCounted.add(ad.id);
-  sb.rpc('record_ad_event', {
-    ad: ad.id, kind: 'impression',
-    at_lat: meetPoint?.lat ?? null, at_lng: meetPoint?.lng ?? null
-  }).catch(e => console.error('impression', e));
+  reportAd(ad.id, 'impression');
 }
 
 function adClick(ad){
-  sb.rpc('record_ad_event', {
-    ad: ad.id, kind: 'click',
-    at_lat: meetPoint?.lat ?? null, at_lng: meetPoint?.lng ?? null
-  }).catch(e => console.error('click', e));
+  reportAd(ad.id, 'click');
 }
 
 // Every ad carries the label and the buyer's name. Not decoration:

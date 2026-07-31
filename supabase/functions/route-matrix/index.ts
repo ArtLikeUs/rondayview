@@ -59,6 +59,9 @@ const LIMITS: Record<string, number> = {
   venues:  80,
   geocode: 200,
   reverse: 200,
+  // Generous: a real session legitimately reports several ads, and the
+  // dedupe rule downstream is what actually keeps the totals honest.
+  ad_event: 400,
 };
 const WINDOW_SECONDS = 3600;
 
@@ -345,6 +348,45 @@ async function handleReverse(body: any): Promise<Response> {
 }
 
 
+// ---------- job 5: counting an ad ----------
+//
+// The browser asks; it does not tell. Recording happens here with the
+// service role key, which the page never sees, so an inflated number
+// cannot come from a developer console.
+//
+// Two people seeing an ad is worth twice one person seeing it twice,
+// so a repeat from the same caller inside the dedupe window is dropped
+// silently. The caller still gets a 200 — whether their event counted
+// is not their business, and telling them would hand anyone trying to
+// game it the feedback they need.
+async function handleAdEvent(req: Request, body: any): Promise<Response> {
+  const ad = String(body?.ad ?? "");
+  const kind = String(body?.event ?? "");
+
+  if (!/^[0-9a-f-]{36}$/i.test(ad)) return json({ error: "Bad ad id." }, 400);
+  if (kind !== "impression" && kind !== "click") {
+    return json({ error: "Unknown ad event." }, 400);
+  }
+
+  const fresh = await rpc("ad_event_is_new", {
+    ad_id_in: ad, kind_in: kind, caller: callerKey(req),
+  });
+
+  // fresh === null means the database did not answer. Do not record:
+  // an uncounted impression is a rounding error, a double-counted one
+  // is a wrong invoice.
+  if (fresh === true) {
+    await rpc("record_ad_event", {
+      ad, kind,
+      at_lat: Number.isFinite(Number(body?.lat)) ? Number(body.lat) : null,
+      at_lng: Number.isFinite(Number(body?.lng)) ? Number(body.lng) : null,
+    });
+  }
+
+  return json({ ok: true });
+}
+
+
 // ---------- router ----------
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -365,6 +407,7 @@ Deno.serve(async (req: Request) => {
     venues:  handleVenues,
     geocode: handleGeocode,
     reverse: handleReverse,
+    ad_event: (b) => handleAdEvent(req, b),
   };
 
   const handler = handlers[kind];
