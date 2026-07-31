@@ -11,14 +11,42 @@ get a form asking for a business name rather than an error.
 
 ---
 
+## Who can do what
+
+| Role | Can |
+|---|---|
+| **member** | Use the app. Never sees advertising tools, and cannot reach them by guessing a URL. |
+| **advertiser** | Run campaigns for their own business. Granted by you, not self-selected. |
+| **admin** | Everything, plus approve and revoke advertisers. You. |
+
+A member has no row in `user_roles` at all — absence *is* the default, so there
+is nothing to assign in the common case and nothing to get wrong.
+
+Roles live in their own table rather than a column on `profiles` for a specific
+reason: the profile update policy is `id = auth.uid()` across the whole row, so a
+role column would have let anybody set themselves to admin with one request.
+
 ## Selling your first slot
 
-1. **Advertising** → create the buyer (business name, contact email)
-2. **New ad** → choose what they bought, write it, set where it runs
-3. Leave *Start running it now* unticked to save a draft. Drafts are never
-   served and never counted.
-4. Come back any time to **Pause** or **Run** it, and to read how many people
-   saw and clicked it.
+Everything advertising-related lives at **/advertise.html** — reachable from a
+small footer link, and nowhere else. The main app shows no advertising controls
+to anyone.
+
+1. A business owner goes to that page, signs in, and applies
+2. You open the same page as an admin and see the queue
+3. **Approve** — that grants the role and creates their business record in one
+   step, so there is no half-state where an approved application has no account
+   behind it
+4. They can now build campaigns there. Everything saves as a **draft**; nothing
+   runs until somebody hits Run
+
+You can also just approve your own application and sell space to yourself, which
+is the fastest way to see the whole thing working.
+
+**Revoking:** an admin can set someone back to member. Their existing ads keep
+running — pulling paid placement off a live page because of an account change
+would be the wrong default — but they can no longer edit or add any. Pause the
+campaigns deliberately if that is what you mean.
 
 ### The three things you can sell
 

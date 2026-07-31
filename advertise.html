@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#221833">
+<title>Advertise — We Rondayview</title>
+<meta name="description" content="Put your business in front of people deciding where to meet, right now, near you.">
+<link rel="icon" href="icons/icon-32.png">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Inter:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#221833; --ink-2:#584a72; --paper:#F1EEF7; --card:#fff;
+  --line:#ded6ec; --line-2:#cabfe0; --mag:#E0246E; --good:#0E7C5A;
+  --display:'Bricolage Grotesque',Impact,system-ui,sans-serif;
+  --body:'Inter',system-ui,-apple-system,sans-serif;
+  --mono:'DM Mono',ui-monospace,Menlo,monospace;
+  --shadow:0 1px 2px rgba(34,24,51,.06), 0 8px 24px -12px rgba(34,24,51,.22);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--paper);color:var(--ink);font-family:var(--body);font-size:15.5px;line-height:1.55;-webkit-font-smoothing:antialiased}
+button{font-family:inherit;color:inherit;cursor:pointer}
+input,select,textarea{font-family:inherit;font-size:16px}
+a{color:var(--mag)}
+
+.masthead{background:var(--ink);color:#fff;padding:22px 18px 20px;padding-top:calc(22px + env(safe-area-inset-top))}
+.brand{font-family:var(--display);font-weight:800;font-size:clamp(28px,7.5vw,42px);letter-spacing:-.035em;line-height:.95;margin:0}
+.brand em{font-style:normal;color:var(--mag)}
+.tag{margin:8px 0 0;font-family:var(--mono);font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:#b6a8cf}
+
+.wrap{max-width:660px;margin:0 auto;padding:20px 15px 60px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);margin-bottom:16px;overflow:hidden}
+.card-hd{padding:15px 16px 0;display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.card-hd h2{margin:0;font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.15em;text-transform:uppercase;color:var(--ink-2)}
+.card-bd{padding:13px 16px 17px}
+
+h1.pitch{font-family:var(--display);font-weight:700;font-size:clamp(24px,6vw,32px);letter-spacing:-.025em;line-height:1.15;margin:0 0 10px}
+.lede{font-size:16.5px;color:#382c4f;margin:0 0 6px}
+.note{font-size:13.5px;color:var(--ink-2);line-height:1.55}
+.note.ok{color:var(--good);font-weight:500}
+.note.bad{color:var(--mag);font-weight:500}
+
+.lbl{display:block;font-family:var(--mono);font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-2);margin:15px 0 6px}
+.inp{width:100%;border:1px solid var(--line-2);border-radius:10px;padding:11px 12px;background:#fff}
+.inp:focus{outline:none;border-color:var(--mag)}
+textarea.inp{min-height:88px;resize:vertical;line-height:1.5}
+.btn{width:100%;border:0;border-radius:11px;background:var(--ink);color:#fff;font-weight:600;font-size:15px;padding:13px;margin-top:16px}
+.btn:hover:not(:disabled){background:#3a2b56}
+.btn:disabled{background:var(--line-2);cursor:not-allowed}
+.btn.mag{background:var(--mag)}
+.btn.mag:hover:not(:disabled){background:#c41a5e}
+.btn.quiet{background:#fff;border:1px solid var(--line-2);color:var(--ink-2)}
+.btn.quiet:hover{border-color:var(--mag);color:var(--mag)}
+.field{display:flex;gap:8px}
+.field .inp{flex:1;min-width:0}
+.field button{border:1px solid var(--ink);background:var(--ink);color:#fff;border-radius:10px;padding:0 16px;font-weight:500;flex:none}
+
+.slots{list-style:none;margin:14px 0 0;padding:0;display:grid;gap:10px}
+.slots li{border:1px solid var(--line);border-radius:11px;padding:12px 13px;background:#faf8fd}
+.slots .nm{font-weight:600;display:block}
+.slots .ds{font-size:13.5px;color:var(--ink-2);display:block;margin-top:3px}
+
+.row{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--line)}
+.row:last-child{border-bottom:0}
+.row .who{flex:1;min-width:0}
+.row .who .nm{font-weight:600;font-size:14.5px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .who .at{font-family:var(--mono);font-size:11.5px;color:var(--ink-2);display:block}
+.mini{border:1px solid var(--line-2);background:#fff;border-radius:8px;padding:6px 11px;font-size:12.5px;font-weight:500;flex:none}
+.mini:hover{border-color:var(--mag);color:var(--mag)}
+.mini.solid{background:var(--ink);border-color:var(--ink);color:#fff}
+.mini.solid:hover{background:var(--mag);border-color:var(--mag);color:#fff}
+.sub-hd{font-family:var(--mono);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-2);margin:16px 0 2px}
+.pill{font-family:var(--mono);font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;border-radius:99px;padding:3px 8px;background:#f0eaf9;color:var(--ink-2)}
+.pill.live{background:var(--mag);color:#fff}
+
+.toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(80px);background:var(--ink);color:#fff;padding:11px 18px;border-radius:99px;font-size:13.5px;font-weight:500;box-shadow:0 8px 24px rgba(34,24,51,.35);opacity:0;transition:.28s;pointer-events:none;z-index:9999;max-width:90vw;text-align:center}
+.toast.on{transform:translateX(-50%) translateY(0);opacity:1}
+:focus-visible{outline:2.5px solid var(--mag);outline-offset:2px;border-radius:4px}
+.hide{display:none!important}
+footer{max-width:660px;margin:0 auto;padding:0 16px 40px;font-size:12.5px;color:var(--ink-2)}
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <h1 class="brand">We <em>Rondayview</em></h1>
+  <p class="tag">Advertising</p>
+</header>
+
+<div class="wrap">
+  <div class="card">
+    <div class="card-bd">
+      <h1 class="pitch">Be the place they were already deciding on.</h1>
+      <p class="lede">People come here at the moment they are choosing where to meet
+      somebody, and they tell us roughly where that is. If your business sits near the
+      answer, that is a customer already halfway out the door.</p>
+      <ul class="slots">
+        <li><span class="nm">Sponsored spot</span>
+          <span class="ds">Your place, shown under the three suggestions, when the meeting
+          point lands near you. Clearly marked as paid — it does not displace the honest
+          picks, and that is exactly why people trust what sits next to it.</span></li>
+        <li><span class="nm">Featured business</span>
+          <span class="ds">A card under the result, with your logo, a line, and a
+          Directions button.</span></li>
+        <li><span class="nm">Banner</span>
+          <span class="ds">A simple card under the search.</span></li>
+      </ul>
+      <p class="note" style="margin-top:14px">Every placement is labelled, targeted to an
+      area you choose, and reported back to you as views and clicks counted on our
+      servers — not numbers your browser made up.</p>
+    </div>
+  </div>
+
+  <div id="panel"></div>
+</div>
+
+<footer>
+  <a href="./">← Back to the app</a> &nbsp;·&nbsp; <a href="privacy.html">Privacy</a>
+</footer>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script>
+/* ============================================================
+   Advertising — the deliberate front door.
+
+   Kept off the main app on purpose. Somebody has to come here, sign
+   in, and ask; then it is granted. The database agrees: without the
+   advertiser role, creating an advertiser record is refused, so
+   nothing here depends on a hidden button staying hidden.
+   ============================================================ */
+const SUPABASE_URL = 'https://nddzplxlufiqckqyufbm.supabase.co';
+const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5kZHpwbHhsdWZpcWNrcXl1ZmJtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU0MzA2MDksImV4cCI6MjEwMTAwNjYwOX0.VQxBbNgI9NY1_5Y7hZ1OtGMoLh2PdQ2UlIap9mhTN-Y';
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => (
+  { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+
+function toast(msg){
+  const t = $('#toast');
+  t.textContent = msg; t.classList.add('on');
+  clearTimeout(t._t); t._t = setTimeout(()=>t.classList.remove('on'), 3600);
+}
+
+const sb = window.supabase.createClient(SUPABASE_URL, ANON_KEY, {
+  auth:{ persistSession:true, autoRefreshToken:true, detectSessionInUrl:true }
+});
+
+let session = null, role = 'member', application = null, advertiser = null;
+
+async function boot(){
+  const { data } = await sb.auth.getSession();
+  session = data.session;
+  sb.auth.onAuthStateChange(async (_e, s) => {
+    const changed = (s?.user?.id || null) !== (session?.user?.id || null);
+    session = s;
+    if (changed){ await load(); render(); }
+  });
+  await load();
+  render();
+}
+
+async function load(){
+  role = 'member'; application = null; advertiser = null;
+  if (!session) return;
+
+  const [r, a] = await Promise.all([
+    sb.rpc('role_of', { u: session.user.id }),
+    sb.from('advertiser_applications')
+      .select('id,business_name,status,decision_note,created_at')
+      .order('created_at', { ascending:false }).limit(1)
+  ]);
+  if (r.error) console.error('role', r.error); else role = r.data || 'member';
+  if (a.error) console.error('application', a.error); else application = a.data?.[0] || null;
+
+  if (role === 'advertiser' || role === 'admin'){
+    const { data } = await sb.from('advertisers')
+      .select('id,business_name,contact_email')
+      .eq('owner_id', session.user.id).limit(1);
+    advertiser = data?.[0] || null;
+  }
+}
+
+function card(title, inner, note){
+  return `<div class="card">
+    <div class="card-hd"><h2>${esc(title)}</h2>${note ? `<span class="note">${esc(note)}</span>` : ''}</div>
+    <div class="card-bd">${inner}</div>
+  </div>`;
+}
+
+function render(){
+  const host = $('#panel');
+
+  if (!session){
+    host.innerHTML = card('Get started', `
+      <p class="note">Advertising runs on a normal We Rondayview account, upgraded once we
+      have said yes. Sign in and tell us about the business — no password, we email you a
+      link.</p>
+      <div class="field" style="margin-top:13px">
+        <input class="inp" id="email" type="email" placeholder="you@yourbusiness.com"
+               autocomplete="email" inputmode="email" aria-label="Your email address">
+        <button id="send">Send link</button>
+      </div>`);
+    const send = async () => {
+      const email = $('#email').value.trim();
+      if (!/^\S+@\S+\.\S+$/.test(email)){ toast('That does not look like an email address.'); return; }
+      const b = $('#send'); b.disabled = true; b.textContent = 'Sending…';
+      const { error } = await sb.auth.signInWithOtp({
+        email, options:{ emailRedirectTo: location.origin + location.pathname }
+      });
+      b.disabled = false; b.textContent = 'Send link';
+      if (error){ toast(error.message || 'Could not send the link.'); return; }
+      host.innerHTML = card('Check your email', `
+        <p class="note ok">We sent a link to ${esc(email)}.</p>
+        <p class="note" style="margin-top:8px">Open it on this device and you will land back
+        here, signed in. It expires in an hour.</p>`);
+    };
+    $('#send').addEventListener('click', send);
+    $('#email').addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
+    return;
+  }
+
+  let html = '';
+
+  if (role === 'advertiser' || role === 'admin'){
+    html += advertiserPanel();
+  } else if (application?.status === 'pending'){
+    html += card('Your application', `
+      <p class="note ok">Received — we will be in touch.</p>
+      <p class="note" style="margin-top:8px">You applied for <strong>${esc(application.business_name)}</strong>
+      on ${new Date(application.created_at).toLocaleDateString()}. Nothing else to do for now.</p>
+      <button class="btn quiet" id="withdraw">Withdraw it</button>`, 'Pending');
+  } else if (application?.status === 'declined'){
+    html += card('Your application', `
+      <p class="note bad">Not this time.</p>
+      ${application.decision_note ? `<p class="note" style="margin-top:8px">${esc(application.decision_note)}</p>` : ''}
+      <p class="note" style="margin-top:8px">You are welcome to apply again.</p>
+      <button class="btn" id="reapply">Apply again</button>`, 'Declined');
+  } else {
+    html += applyForm();
+  }
+
+  if (role === 'admin') html += `<div id="adminHost"></div>`;
+
+  host.innerHTML = html;
+  wire();
+  if (role === 'admin') renderAdmin();
+}
+
+function applyForm(){
+  return card('Tell us about the business', `
+    <label class="lbl" for="biz">Business name</label>
+    <input class="inp" id="biz" maxlength="80" placeholder="Nicky's Coffee">
+    <label class="lbl" for="mail">Best email</label>
+    <input class="inp" id="mail" type="email" placeholder="owner@example.com"
+           value="${esc(session.user.email || '')}">
+    <label class="lbl" for="phone">Phone</label>
+    <input class="inp" id="phone" placeholder="Optional">
+    <label class="lbl" for="site">Website or social</label>
+    <input class="inp" id="site" placeholder="Optional">
+    <label class="lbl" for="msg">What are you hoping for?</label>
+    <textarea class="inp" id="msg" maxlength="600"
+      placeholder="Where you are, who you want walking in, anything else worth knowing."></textarea>
+    <button class="btn mag" id="apply">Send it</button>
+    <p class="note" style="margin-top:10px">We read these ourselves. Expect a reply from a
+    person, not a system.</p>`);
+}
+
+function advertiserPanel(){
+  return card('Your campaigns', `
+    <p class="note">Approved${advertiser ? ` — running as <strong>${esc(advertiser.business_name)}</strong>` : ''}.</p>
+    <div id="ads"><p class="note" style="margin-top:10px">Loading…</p></div>
+    <button class="btn" id="newAd">New ad</button>`,
+    role === 'admin' ? 'Admin' : 'Advertiser');
+}
+
+function wire(){
+  $('#withdraw')?.addEventListener('click', async e => {
+    e.target.disabled = true;
+    const { error } = await sb.from('advertiser_applications').delete().eq('id', application.id);
+    if (error){ toast(error.message); e.target.disabled = false; return; }
+    toast('Withdrawn.');
+    await load(); render();
+  });
+
+  $('#reapply')?.addEventListener('click', () => {
+    application = null; render();
+  });
+
+  $('#apply')?.addEventListener('click', async () => {
+    const b = $('#apply');
+    const name = $('#biz').value.trim();
+    if (name.length < 2){ toast('What is the business called?'); return; }
+    b.disabled = true; b.textContent = 'Sending…';
+    const { error } = await sb.from('advertiser_applications').insert({
+      user_id: session.user.id,
+      business_name: name,
+      contact_email: $('#mail').value.trim() || null,
+      contact_phone: $('#phone').value.trim() || null,
+      website: $('#site').value.trim() || null,
+      message: $('#msg').value.trim() || null
+    });
+    if (error){
+      toast(error.code === '23505' ? 'You already have an application waiting.' : error.message);
+      b.disabled = false; b.textContent = 'Send it';
+      return;
+    }
+    toast('Sent. We will be in touch.');
+    await load(); render();
+  });
+
+  if ($('#ads')) loadAds();
+  $('#newAd')?.addEventListener('click', newAdForm);
+}
+
+/* ---------- managing campaigns ---------- */
+async function loadAds(){
+  if (!advertiser){
+    $('#ads').innerHTML = `<p class="note" style="margin-top:10px">No business record yet.
+      That is unusual — tell us and we will sort it.</p>`;
+    return;
+  }
+  const [{ data: ads }, { data: perf }] = await Promise.all([
+    sb.from('ads').select('*').eq('advertiser_id', advertiser.id).order('created_at', { ascending:false }),
+    sb.rpc('ad_performance')
+  ]);
+  const stats = Object.fromEntries((perf || []).map(r => [r.ad_id, r]));
+
+  $('#ads').innerHTML = (ads || []).length
+    ? (ads || []).map(a => {
+        const s = stats[a.id] || { impressions:0, clicks:0 };
+        return `<div class="row">
+          <span class="who">
+            <span class="nm">${esc(a.headline)}</span>
+            <span class="at">${esc(a.format)} · ${s.impressions} seen · ${s.clicks} clicked</span>
+          </span>
+          <span class="pill${a.status === 'active' ? ' live' : ''}">${esc(a.status)}</span>
+          <button class="mini" data-toggle="${a.id}" data-status="${esc(a.status)}">
+            ${a.status === 'active' ? 'Pause' : 'Run'}</button>
+        </div>`;
+      }).join('')
+    : `<p class="note" style="margin:10px 0 0">Nothing running yet.</p>`;
+
+  $('#ads').querySelectorAll('[data-toggle]').forEach(b => b.addEventListener('click', async () => {
+    b.disabled = true;
+    const next = b.dataset.status === 'active' ? 'paused' : 'active';
+    const { error } = await sb.from('ads').update({ status: next }).eq('id', b.dataset.toggle);
+    if (error) toast(error.message);
+    loadAds();
+  }));
+}
+
+function newAdForm(){
+  $('#ads').innerHTML = `
+    <label class="lbl" for="fmt">What are you buying</label>
+    <select class="inp" id="fmt">
+      <option value="banner">Banner — a card under the search</option>
+      <option value="featured_card">Featured business — a card under the result</option>
+      <option value="sponsored_place">Sponsored spot — shown under the three picks</option>
+    </select>
+    <label class="lbl" for="hl">Headline</label>
+    <input class="inp" id="hl" maxlength="120" placeholder="Two-for-one before 5pm">
+    <label class="lbl" for="bd">Body</label>
+    <input class="inp" id="bd" maxlength="300" placeholder="Optional line of detail">
+    <div id="placeF" class="hide">
+      <label class="lbl" for="pn">Place name</label>
+      <input class="inp" id="pn" placeholder="Nicky's Coffee">
+      <label class="lbl" for="pa">Place address</label>
+      <input class="inp" id="pa" placeholder="Where it actually is">
+    </div>
+    <div id="ctaF">
+      <label class="lbl" for="cl">Button text</label>
+      <input class="inp" id="cl" maxlength="30" placeholder="See the menu">
+      <label class="lbl" for="cu">Button link</label>
+      <input class="inp" id="cu" placeholder="https://…">
+    </div>
+    <label class="lbl" for="tg">Show it near</label>
+    <input class="inp" id="tg" placeholder="Town or address — blank means everywhere">
+    <label class="lbl" for="rd">Within how many miles</label>
+    <input class="inp" id="rd" type="number" min="1" max="300" value="25">
+    <label class="lbl" for="cap">Most showings per day</label>
+    <input class="inp" id="cap" type="number" min="1" placeholder="Blank for no limit">
+    <button class="btn mag" id="saveAd">Save as draft</button>
+    <button class="btn quiet" id="backAds">Back</button>
+    <p class="note" style="margin-top:10px">Saved as a draft. Nothing runs until you hit
+    Run on it.</p>`;
+
+  const sync = () => {
+    const f = $('#fmt').value;
+    $('#placeF').classList.toggle('hide', f !== 'sponsored_place');
+    $('#ctaF').classList.toggle('hide', f === 'sponsored_place');
+  };
+  $('#fmt').addEventListener('change', sync); sync();
+  $('#backAds').addEventListener('click', loadAds);
+  $('#saveAd').addEventListener('click', saveAd);
+}
+
+async function geocode(q){
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/route-matrix`, {
+    method:'POST', headers:{ 'Content-Type':'application/json' },
+    body: JSON.stringify({ kind:'geocode', q })
+  });
+  const d = await res.json().catch(()=>({}));
+  if (!res.ok) throw new Error(d.error || 'Address lookup failed.');
+  return d.results || [];
+}
+
+async function saveAd(){
+  const b = $('#saveAd');
+  const format = $('#fmt').value;
+  const headline = $('#hl').value.trim();
+  if (!headline){ toast('The ad needs a headline.'); return; }
+  const ctaUrl = $('#cu').value.trim();
+  if (ctaUrl && !/^https?:\/\//i.test(ctaUrl)){
+    toast('The button link must start with http:// or https://'); return;
+  }
+
+  b.disabled = true; b.textContent = 'Saving…';
+  try{
+    const row = {
+      advertiser_id: advertiser.id, format, headline,
+      body: $('#bd').value.trim() || null,
+      status: 'draft',
+      daily_impression_cap: parseInt($('#cap').value, 10) || null
+    };
+
+    if (format === 'sponsored_place'){
+      const pn = $('#pn').value.trim(), pa = $('#pa').value.trim();
+      if (!pn || !pa) throw new Error('A sponsored spot needs a place name and address.');
+      const hits = await geocode(pa);
+      if (!hits.length) throw new Error(`Could not find "${pa}".`);
+      const { data: place, error: pe } = await sb.from('places').insert({
+        source:'advertiser', name:pn,
+        lat:parseFloat(hits[0].lat), lng:parseFloat(hits[0].lon),
+        address:hits[0].display_name
+      }).select('id').single();
+      if (pe) throw new Error(pe.message);
+      row.place_id = place.id;
+      row.target_lat = parseFloat(hits[0].lat);
+      row.target_lng = parseFloat(hits[0].lon);
+    } else {
+      row.cta_label = $('#cl').value.trim() || null;
+      row.cta_url = ctaUrl || null;
+    }
+
+    const tg = $('#tg').value.trim();
+    if (tg && row.target_lat === undefined){
+      const hits = await geocode(tg);
+      if (!hits.length) throw new Error(`Could not find "${tg}".`);
+      row.target_lat = parseFloat(hits[0].lat);
+      row.target_lng = parseFloat(hits[0].lon);
+    }
+    const miles = parseFloat($('#rd').value);
+    if (Number.isFinite(miles)) row.target_radius_m = Math.round(miles * 1609.34);
+
+    const { error } = await sb.from('ads').insert(row);
+    if (error) throw new Error(error.message);
+    toast('Saved as a draft.');
+    loadAds();
+  }catch(err){
+    console.error(err);
+    toast(err.message);
+    b.disabled = false; b.textContent = 'Save as draft';
+  }
+}
+
+/* ---------- admin ---------- */
+async function renderAdmin(){
+  const host = $('#adminHost');
+  if (!host) return;
+  const { data, error } = await sb.rpc('admin_list_applications', { want_status:'pending' });
+  if (error){ host.innerHTML = card('Applications', `<p class="note bad">${esc(error.message)}</p>`); return; }
+
+  host.innerHTML = card('Applications', (data || []).length
+    ? (data || []).map(a => `
+        <div class="row">
+          <span class="who">
+            <span class="nm">${esc(a.business_name)}</span>
+            <span class="at">@${esc(a.handle)} · ${esc(a.contact_email || 'no email')}</span>
+          </span>
+          <button class="mini solid" data-yes="${a.id}">Approve</button>
+          <button class="mini" data-no="${a.id}">No</button>
+        </div>
+        ${a.message ? `<p class="note" style="margin:-4px 0 10px">${esc(a.message)}</p>` : ''}`).join('')
+    : `<p class="note">Nothing waiting.</p>`,
+    `${(data || []).length} pending`);
+
+  host.querySelectorAll('[data-yes]').forEach(b => b.addEventListener('click', () => decide(b.dataset.yes, true, b)));
+  host.querySelectorAll('[data-no]').forEach(b => b.addEventListener('click', () => decide(b.dataset.no, false, b)));
+}
+
+async function decide(id, approve, btn){
+  btn.disabled = true;
+  const { error } = await sb.rpc('admin_decide_application', { app_id:id, approve, note:null });
+  if (error){ toast(error.message); btn.disabled = false; return; }
+  toast(approve ? 'Approved — they can advertise now.' : 'Declined.');
+  renderAdmin();
+}
+
+boot();
+</script>
+</body>
+</html>

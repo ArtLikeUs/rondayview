@@ -73,6 +73,9 @@ psql -h 127.0.0.1 -p $PORT -U postgres -d wrv -q -f "$HERE/05_limits.sql"
 echo "==> checking ad counting"
 psql -h 127.0.0.1 -p $PORT -U postgres -d wrv -q -f "$HERE/06_ad_counting.sql"
 
+echo "==> checking roles"
+psql -h 127.0.0.1 -p $PORT -U postgres -d wrv -q -f "$HERE/07_roles.sql"
+
 echo
 echo "==> re-applying migrations to prove they are safe to run twice"
 for m in "$ROOT"/supabase/migrations/*.sql; do
