@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#221833">
+<title>Privacy — We Rondayview</title>
+<link rel="icon" href="icons/icon-32.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Inter:wght@400;500;600&family=DM+Mono:wght@400&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#221833;--ink-2:#584a72;--paper:#F1EEF7;--card:#fff;--line:#ded6ec;--mag:#E0246E}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:'Inter',system-ui,sans-serif;font-size:15.5px;line-height:1.6}
+header{background:var(--ink);color:#fff;padding:22px 18px}
+header .brand{font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(26px,7vw,38px);letter-spacing:-.035em;margin:0}
+header .brand em{font-style:normal;color:var(--mag)}
+header p{margin:6px 0 0;font-family:'DM Mono',monospace;font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:#b6a8cf}
+main{max-width:720px;margin:0 auto;padding:22px 16px 60px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px 20px 6px;margin-bottom:16px}
+h2{font-family:'Bricolage Grotesque',sans-serif;font-size:21px;letter-spacing:-.02em;margin:22px 0 8px}
+h2:first-child{margin-top:0}
+p,li{color:#382c4f}
+.note{color:var(--ink-2);font-size:14px}
+table{width:100%;border-collapse:collapse;margin:10px 0 18px;font-size:14px}
+th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:'DM Mono',monospace;font-size:10.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-2);font-weight:400}
+a{color:var(--mag)}
+.back{display:inline-block;margin-top:8px;font-weight:500}
+code{font-family:'DM Mono',monospace;font-size:13px;background:#f3effa;padding:1px 5px;border-radius:5px}
+</style>
+</head>
+<body>
+<header>
+  <h1 class="brand">We <em>Rondayview</em></h1>
+  <p>Privacy</p>
+</header>
+<main>
+
+<div class="card">
+  <p class="note">Last updated 30 July 2026.</p>
+  <p>We Rondayview works out a fair place for people to meet. To do that it has to
+  handle where people are starting from, which is worth being precise about.</p>
+  <p><strong>You can use the whole app without an account.</strong> Signing in only adds
+  saving and friends.</p>
+</div>
+
+<div class="card">
+  <h2>What is kept</h2>
+  <table>
+    <tr><th>What</th><th>Why</th><th>Who can see it</th></tr>
+    <tr><td>Your email address</td><td>It is how you sign in — we email you a link instead of using a password</td><td>Only you and the site owner</td></tr>
+    <tr><td>Display name, handle, picture</td><td>So friends can find you</td><td>Anyone signed in</td></tr>
+    <tr><td>Your home address, if you save one</td><td>To fill in your starting point</td><td><strong>Only you</strong>, unless you switch on sharing</td></tr>
+    <tr><td>Friendships</td><td>To show your friends list</td><td>Only the two people involved</td></tr>
+    <tr><td>Saved meetups</td><td>So you can reopen them</td><td>You and the people in them</td></tr>
+    <tr><td>Ads seen and clicked</td><td>To tell an advertiser how their ad did</td><td>The advertiser, as totals — never as a list of people</td></tr>
+  </table>
+
+  <h2>Addresses you type but do not save</h2>
+  <p>If you are not signed in, or you just type an address into the box, that address is
+  used to work out the meeting point and is <strong>not stored on our servers</strong>. It
+  is sent to the services below so they can turn it into a point on a map and measure the
+  drive.</p>
+
+  <h2>Sharing your address with a friend</h2>
+  <p>This is off unless you turn it on, and it is a real disclosure. When it is on, an
+  accepted friend can use your home as their starting point — which means they get your
+  coordinates, and coordinates are an address. The app shortens the label it displays, but
+  that is cosmetic. Turn it off any time in your profile.</p>
+</div>
+
+<div class="card">
+  <h2>Who else is involved</h2>
+  <p>Using the app sends some data to these services. We do not sell anything to anybody.</p>
+  <ul>
+    <li><strong>Supabase</strong> — stores the account data above and sends the sign-in email.</li>
+    <li><strong>OpenStreetMap Nominatim</strong> — turns a typed address into coordinates.</li>
+    <li><strong>Overpass</strong> — lists cafes, bars and parks near the meeting point.</li>
+    <li><strong>OpenRouteService</strong> — measures real drive times. It is asked by our
+      own server, so it never sees your browser.</li>
+    <li><strong>CARTO and OpenStreetMap</strong> — draw the map tiles.</li>
+    <li><strong>Google Fonts</strong> — the typefaces.</li>
+  </ul>
+  <p class="note">There is no analytics, no tracking pixel, and no advertising network.
+  Ads here are sold directly and are counted only as a total per ad.</p>
+</div>
+
+<div class="card">
+  <h2>Location</h2>
+  <p>The crosshair button asks your browser for your location. Your browser will ask you
+  first, and it is only used to fill in that one box. It is not stored unless you save it
+  as your home address.</p>
+
+  <h2>Deleting things</h2>
+  <p>You can delete a saved meetup, remove a friend, clear your home address, or turn off
+  sharing, all from inside the app. To delete your account and everything attached to it,
+  email <a href="mailto:beholdalu@gmail.com">beholdalu@gmail.com</a> and it will be removed.</p>
+
+  <h2>Children</h2>
+  <p>This is not aimed at children under 13 and accounts should not be created for them.</p>
+
+  <h2>Changes</h2>
+  <p>If this page changes in a way that matters, the date at the top changes with it.</p>
+
+  <h2>Asking about any of this</h2>
+  <p><a href="mailto:beholdalu@gmail.com">beholdalu@gmail.com</a></p>
+
+  <p><a class="back" href="./">← Back to the app</a></p>
+</div>
+
+</main>
+</body>
+</html>

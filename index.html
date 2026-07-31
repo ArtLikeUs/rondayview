@@ -7,6 +7,11 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="We Rondayview">
 <title>We Rondayview — meet in the middle</title>
+<meta name="description" content="Find a fair place to meet in the middle. Everybody drives a little, nobody drives all of it.">
+
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-32.png">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
 
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -457,6 +462,11 @@ details.adv summary:hover{color:var(--mag)}
     </section>
   </div>
 </div>
+
+<footer style="max-width:1120px;margin:0 auto;padding:4px 16px 30px;font-size:12.5px;color:#584a72">
+  <a href="privacy.html" style="color:#E0246E">Privacy</a>
+  &nbsp;·&nbsp; Map data &copy; OpenStreetMap contributors
+</footer>
 
 <div class="toast" id="toast"></div>
 <div id="modalHost"></div>
@@ -2627,6 +2637,11 @@ $('#goBtn').addEventListener('click', findSpot);
   renderMode();
   setTimeout(()=>map.invalidateSize(), 200);
   initAuth();            // deliberately not awaited — the map should not wait on the network
+
+  // Only over https, which rules out opening the file straight off disk.
+  if ('serviceWorker' in navigator && location.protocol === 'https:'){
+    navigator.serviceWorker.register('./sw.js').catch(e => console.error('sw', e));
+  }
 })();
 </script>
 </body>
