@@ -369,6 +369,11 @@ details.adv summary:hover{color:var(--mag)}
       <div class="card-bd" id="friendsBody"></div>
     </section>
 
+    <section class="card hide" id="savedCard">
+      <div class="card-hd"><h2>Saved meetups</h2><span class="note" id="savedNote"></span></div>
+      <div class="card-bd" id="savedBody"></div>
+    </section>
+
     <section class="card">
       <div class="card-hd"><h2>Who's coming</h2><span class="note" id="countNote">2 of 4</span></div>
       <div id="people"></div>
@@ -430,6 +435,7 @@ details.adv summary:hover{color:var(--mag)}
           <div class="why hide" id="modeWhy"></div>
           <div class="row">
             <button class="chip" id="copyBtn">Copy plan for the group chat</button>
+            <button class="chip hide" id="saveMeetupBtn">Save this</button>
           </div>
         </div>
         <div class="fair" id="fairBar"></div>
@@ -932,7 +938,10 @@ function mapElements(elements){
     const label = e.tags.name || e.tags.brand || e.tags.operator
                   || (key === 'fuel' ? 'Gas station' : null);
     if (!label) return null;
-    return { name:label, lat, lng, kind:k[0], kindLabel:k[1] };
+    // Keep the OpenStreetMap id so a saved meetup can point at the same
+    // row next time instead of making a duplicate place.
+    const ref = e.type && e.id ? `${e.type}/${e.id}` : null;
+    return { name:label, lat, lng, kind:k[0], kindLabel:k[1], sourceRef:ref };
   }).filter(Boolean);
 }
 
@@ -1298,6 +1307,7 @@ async function findSpot(){
   renderVenueSection();
   drawMap();
   loadAds(meetPoint.lat, meetPoint.lng);   // not awaited; ads must never hold up the answer
+  $('#saveMeetupBtn').classList.toggle('hide', !session);
 
   $('#goBtn').disabled = false;
   $('#goBtn').textContent = 'Find the spot';
@@ -1700,6 +1710,8 @@ async function loadProfile(){
   applyHome();
   await loadFriends();
   renderFriends();
+  await loadMeetups();
+  renderSaved();
 }
 
 // Fill the first empty person with your saved address, so signing in
@@ -1712,6 +1724,7 @@ function applyHome(){
   me.lng = homeSpot.home_lng;
   me.label = homeSpot.home_label || '';
   me.query = homeSpot.home_label || '';
+  me.isMe = true;      // the one row we can honestly attach to your account
   if (profile?.display_name && me.name === 'Me') me.name = profile.display_name;
   renderPeople(); refreshState();
 }
@@ -1810,8 +1823,9 @@ function renderAccount(problem){
   $('#signOut').addEventListener('click', async () => {
     await sb.auth.signOut();
     session = null; profile = null; homeSpot = null;
-    shareHome = false; friends = []; requests = [];
-    renderAccount(); renderFriends();
+    shareHome = false; friends = []; requests = []; savedMeetups = [];
+    renderAccount(); renderFriends(); renderSaved();
+    $('#saveMeetupBtn').classList.add('hide');
     toast('Signed out.');
   });
 }
@@ -2022,6 +2036,203 @@ async function addFriendToTrip(profileId, btn){
   toast(lat !== null
     ? `${fr.display_name} added from their saved spot.`
     : `${fr.display_name} added — type where they are starting from.`);
+}
+
+/* ============================================================
+   SAVED MEETUPS
+
+   The reason an account is worth having. Everything else the app does
+   works fine signed out; this is the part that only works because it
+   remembers you.
+   ============================================================ */
+let savedMeetups = [];
+
+async function loadMeetups(){
+  savedMeetups = [];
+  if (!sb || !session) return;
+  const { data, error } = await sb
+    .from('meetups')
+    .select('id,title,mode,result_lat,result_lng,created_at,chosen_place_id,places(name),meetup_participants(display_name,lat,lng,weight,user_id)')
+    .order('created_at', { ascending:false })
+    .limit(20);
+  if (error){ console.error('meetups', error); return; }
+  savedMeetups = data || [];
+}
+
+function renderSaved(){
+  const card = $('#savedCard');
+  if (!card) return;
+  if (!session){ card.classList.add('hide'); return; }
+  card.classList.remove('hide');
+
+  $('#savedNote').textContent = savedMeetups.length ? `${savedMeetups.length}` : '';
+
+  if (!savedMeetups.length){
+    $('#savedBody').innerHTML = `<p class="note">Nothing saved yet. Find a spot and hit
+      <strong>Save this</strong> to keep it.</p>`;
+    return;
+  }
+
+  $('#savedBody').innerHTML = savedMeetups.map(m => {
+    const who = (m.meetup_participants || []).map(p => p.display_name).join(', ');
+    const when = new Date(m.created_at).toLocaleDateString(undefined, { month:'short', day:'numeric' });
+    const where = m.places?.name || (m.title || 'A spot');
+    return `
+      <div class="frow">
+        <span class="who">
+          <span class="nm">${esc(m.title || where)}</span>
+          <span class="at">${esc(who)} · ${esc(when)}</span>
+        </span>
+        <button class="mini solid" data-open="${m.id}">Open</button>
+        <button class="mini" data-forget="${m.id}" aria-label="Delete">&times;</button>
+      </div>`;
+  }).join('');
+
+  $('#savedBody').querySelectorAll('[data-open]').forEach(b =>
+    b.addEventListener('click', () => openMeetup(b.dataset.open)));
+  $('#savedBody').querySelectorAll('[data-forget]').forEach(b =>
+    b.addEventListener('click', () => forgetMeetup(b.dataset.forget, b)));
+}
+
+// A venue we found on OpenStreetMap has to exist as a row of our own
+// before a meetup can point at it. Matching on the OSM id means saving
+// the same cafe twice reuses one row rather than piling up duplicates.
+async function ensurePlace(v){
+  if (!v || !v.name) return null;
+  if (v.sourceRef){
+    const { data, error } = await sb.from('places')
+      .upsert({
+        source:'osm', source_ref:v.sourceRef, name:v.name,
+        category:v.kind || null, lat:v.lat, lng:v.lng
+      }, { onConflict:'source,source_ref' })
+      .select('id').single();
+    if (!error && data) return data.id;
+    console.error('place upsert', error);
+  }
+  const { data, error } = await sb.from('places')
+    .insert({ source:'manual', name:v.name, category:v.kind || null, lat:v.lat, lng:v.lng })
+    .select('id').single();
+  if (error){ console.error('place insert', error); return null; }
+  return data.id;
+}
+
+// Asking for a name gets its own small sheet rather than a prompt():
+// prompt is blocked outright in some embedded browsers, and on a phone
+// it is a system dialog dropped on top of your app.
+function saveMeetup(){
+  if (!sb || !session || !meetPoint || !lastActive.length) return;
+  const where = (chosenPlace?.v?.name || $('#spotName').textContent || 'Meetup').slice(0, 80);
+
+  $('#modalHost').innerHTML = `
+    <div class="modal" id="modalBack">
+      <div class="sheet" role="dialog" aria-modal="true" aria-label="Save this meetup">
+        <div class="sheet-hd">
+          <h3>Save this</h3>
+          <button class="iconbtn" id="closeModal" aria-label="Close">&times;</button>
+        </div>
+        <div class="sheet-bd">
+          <label class="lbl" for="meetTitle">Call it what?</label>
+          <input class="inp" id="meetTitle" maxlength="80" value="${esc(where)}">
+          <p class="note" style="margin:6px 0 0">Saving keeps who was coming, where they
+          started from, and the spot you landed on.</p>
+          <button class="btn mag" id="confirmSave">Save</button>
+        </div>
+      </div>
+    </div>`;
+  $('#closeModal').addEventListener('click', closeModal);
+  $('#modalBack').addEventListener('click', e => { if (e.target.id === 'modalBack') closeModal(); });
+  $('#meetTitle').addEventListener('keydown', e => { if (e.key === 'Enter') commitMeetup(); });
+  $('#confirmSave').addEventListener('click', commitMeetup);
+  setTimeout(() => $('#meetTitle')?.select(), 60);
+}
+
+async function commitMeetup(){
+  const btn = $('#confirmSave');
+  const title = ($('#meetTitle').value.trim() || 'Meetup').slice(0, 80);
+  btn.disabled = true; btn.textContent = 'Saving…';
+
+  try{
+    const placeId = chosenPlace?.v ? await ensurePlace(chosenPlace.v) : null;
+
+    const { data: meetup, error } = await sb.from('meetups').insert({
+      owner_id: session.user.id,
+      title,
+      mode: lastMetrics?.unit === 'min' ? 'drive' : 'straight',
+      result_lat: meetPoint.lat,
+      result_lng: meetPoint.lng,
+      chosen_place_id: placeId
+    }).select('id').single();
+    if (error) throw new Error(error.message);
+
+    const rows = lastActive.map(p => ({
+      meetup_id: meetup.id,
+      // Only attach an account where we actually know whose it is: a friend
+      // added by name, or the row filled from your own saved address.
+      // Guessing "the first person is probably you" would attach a friend's
+      // row to your account, and that flag decides who can see the meetup.
+      user_id: p.friendId || (p.isMe ? session.user.id : null),
+      display_name: p.name,
+      address_label: p.label || null,
+      lat: p.lat, lng: p.lng,
+      weight: p.weight
+    }));
+    const { error: pe } = await sb.from('meetup_participants').insert(rows);
+    if (pe) throw new Error(pe.message);
+
+    await loadMeetups(); renderSaved();
+    closeModal();
+    toast(`Saved as “${title}”.`);
+  }catch(err){
+    console.error(err);
+    toast(err.message || 'Could not save that.');
+    btn.disabled = false; btn.textContent = 'Save';
+  }
+}
+
+// Put the people back exactly as they were. The saved result is shown
+// again too, but anything that needs the network is left for the user
+// to trigger, so opening a meetup is instant and offline-safe.
+function openMeetup(id){
+  const m = savedMeetups.find(x => x.id === id);
+  if (!m) return;
+  const parts = m.meetup_participants || [];
+  if (!parts.length){ toast('That meetup has nobody in it.'); return; }
+
+  people = parts.slice(0, MAX).map((p, i) => ({
+    id: nextId++, name: p.display_name, query: p.lat !== null ? (p.display_name) : '',
+    lat: p.lat, lng: p.lng, label: '', weight: Number(p.weight) || 50
+  }));
+  normalizeWeights();
+
+  meetPoint = { lat: m.result_lat, lng: m.result_lng };
+  lastActive = people.filter(p => p.lat !== null);
+  // Per-person drive times were never stored, only the result, so
+  // recomputing them here would be a guess. Straight-line miles are
+  // honest and the badge says so.
+  lastMetrics = { unit:'mi', values: lastActive.map(p => haversine(p, meetPoint)) };
+  lastRanked = []; lastPicks = []; chosenPlace = null;
+
+  renderPeople(); renderPresets(); refreshState();
+  $('#resultCard').classList.remove('hide');
+  $('#spotName').textContent = m.places?.name || m.title || 'Saved spot';
+  $('#modeBadge').textContent = 'Straight line';
+  $('#modeBadge').classList.remove('live');
+  setWhy('Reopened from your saved meetups. Hit Find the spot to work it out again with live drive times.');
+  renderSplit(lastActive);
+  $('#pickCard').classList.add('hide');
+  $('#venueCard').classList.add('hide');
+  drawMap();
+  map.setView([meetPoint.lat, meetPoint.lng], 13);
+  $('#resultCard').scrollIntoView({ behavior:'smooth', block:'nearest' });
+  toast(`Opened “${m.title || 'meetup'}”.`);
+}
+
+async function forgetMeetup(id, btn){
+  btn.disabled = true;
+  const { error } = await sb.from('meetups').delete().eq('id', id);
+  if (error){ console.error(error); toast('Could not delete that.'); btn.disabled = false; return; }
+  await loadMeetups(); renderSaved();
+  toast('Deleted.');
 }
 
 /* ============================================================
@@ -2399,6 +2610,7 @@ async function saveProfile(){
 }
 
 /* ---------- wire up ---------- */
+$('#saveMeetupBtn').addEventListener('click', saveMeetup);
 $('#addBtn').addEventListener('click', () => {
   if (people.length >= MAX) return;
   people.push({id:nextId++,name:`Person ${people.length+1}`,query:'',lat:null,lng:null,label:'',weight:100/(people.length+1)});

@@ -9,7 +9,8 @@ Built in waves. Each one leaves the app working.
 | 3 | Sign in with a magic link; profiles with pictures | built; needs the migration run and your anon key — see `SETUP-ACCOUNTS.md` |
 | 4 | Friends — search, request, accept, and pull a friend's address into a meetup | done |
 | 5 | Suggest the best 3 places to meet, instead of a long list | done — no migration needed |
-| 6 | Ad slots, ad serving, and a page for you to manage advertisers | built; needs `20260730000003_ads.sql` run — see `SETUP-ADS.md` |
+| 6 | Ad slots, ad serving, and a page for you to manage advertisers | done, live |
+| 6b | Saving meetups — keep them, reopen them, delete them | done, no migration needed |
 | 7 | Publish it | blocked on your call — nothing below here can be finished without it |
 | 8 | App Store packaging | needs 7 |
 
