@@ -675,19 +675,50 @@ async function geocode(q){
   return res.json();
 }
 
-async function reverse(lat,lng){
+// The whole reply, not just the label — we need the road classification
+// to tell a street corner from the hard shoulder of a motorway.
+async function reverseFull(lat,lng){
   if (serverUrl){
     try{
       const { result } = await askServer({ kind:'reverse', lat, lng });
-      if (result?.display_name) return result.display_name;
+      if (result?.display_name) return result;
     }catch(err){ console.error('reverse via server failed, falling back', err); }
   }
   try{
     const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`,
       { headers:{ 'Accept':'application/json' } });
-    const j = await r.json();
-    return j.display_name || '';
-  }catch(e){ return ''; }
+    return await r.json();
+  }catch(e){ return null; }
+}
+
+async function reverse(lat,lng){
+  const j = await reverseFull(lat,lng);
+  return j?.display_name || '';
+}
+
+// Is this point stuck on a road you cannot stop on?
+//
+// Asked of the road network, not of reverse geocoding. Reverse
+// geocoding returns the nearest *named* feature, and beside a motorway
+// that is regularly a school or a trail a hundred metres away — so a
+// point in live traffic comes back looking like a quiet street. That
+// was measured, not assumed: five test points on interstates all came
+// back clean before this was rewritten.
+//
+// motorway and trunk only. Plenty of ordinary high streets are tagged
+// primary or secondary, and refusing those would make the app useless
+// across half the country.
+async function isOnHighway(lat, lng){
+  if (!serverUrl) return false;
+  try{
+    const r = await askServer({ kind:'road_check', lat, lng });
+    return r?.onHighway === true;
+  }catch(err){
+    // If we cannot tell, do not block the answer. Refusing every
+    // meeting point whenever Overpass is busy is its own kind of broken.
+    console.error('road check failed', err);
+    return false;
+  }
 }
 
 /* ============================================================
@@ -934,7 +965,9 @@ const KINDS = {
   bar:['bar','Bar'], pub:['bar','Bar'], biergarten:['bar','Bar'],
   restaurant:['food','Food'], fast_food:['food','Food'],
   fuel:['fuel','Gas'],
-  park:['park','Park']
+  park:['park','Park'],
+  // Tagged on highway=, not amenity=. Handled separately below.
+  services:['rest','Rest stop'], rest_area:['rest','Rest stop']
 };
 
 // Overpass is free and volunteer-run, so any single server is often busy.
@@ -978,17 +1011,41 @@ function mapElements(elements){
   return elements.map(e=>{
     const lat = e.lat ?? e.center?.lat, lng = e.lon ?? e.center?.lon;
     if (!lat || !e.tags) return null;
-    const key = e.tags.amenity || (e.tags.leisure==='park' ? 'park' : null);
+    const key = e.tags.amenity
+             || (e.tags.leisure === 'park' ? 'park' : null)
+             || (/^(services|rest_area)$/.test(e.tags.highway || '') ? e.tags.highway : null);
     const k = KINDS[key]; if (!k) return null;
-    // Loads of gas stations are mapped with a brand but no name.
+    // Loads of gas stations and rest areas are mapped without a name.
     const label = e.tags.name || e.tags.brand || e.tags.operator
-                  || (key === 'fuel' ? 'Gas station' : null);
+                  || (key === 'fuel' ? 'Gas station' : null)
+                  || (k[0] === 'rest' ? 'Rest stop' : null);
     if (!label) return null;
     // Keep the OpenStreetMap id so a saved meetup can point at the same
     // row next time instead of making a duplicate place.
     const ref = e.type && e.id ? `${e.type}/${e.id}` : null;
-    return { name:label, lat, lng, kind:k[0], kindLabel:k[1], sourceRef:ref };
+    return {
+      name:label, lat, lng, kind:k[0], kindLabel:k[1], sourceRef:ref,
+      // A motorway service area has fuel and food by definition. A plain
+      // lay-by tagged rest_area might be a picnic table, so it has to
+      // earn that description — see markFuelledRestStops().
+      isServices: key === 'services'
+    };
   }).filter(Boolean);
+}
+
+// "A rest stop with a gas station" is the one highway meeting place
+// worth offering, and OpenStreetMap does not record that relationship
+// directly. We already fetch fuel stations in the same query, so it can
+// be worked out: a rest area with a pump within about 250 metres is one.
+// A motorway service area counts automatically — fuel is what makes it
+// a service area.
+function markFuelledRestStops(list){
+  const pumps = list.filter(v => v.kind === 'fuel');
+  list.forEach(v => {
+    if (v.kind !== 'rest') return;
+    v.hasFuel = v.isServices || pumps.some(p => haversine(p, v) < 0.155);  // ~250 m in miles
+  });
+  return list;
 }
 
 let venueSource = null;   // which directory actually answered
@@ -1170,7 +1227,11 @@ async function fetchMatrix(origins, candidates){
 // penalty small enough to be reasonable is too small to ever matter.
 // A first attempt used a 0.85 penalty and still ranked a Sunoco third,
 // above a bar and four restaurants.
-const LAST_RESORT = new Set(['fuel']);
+// Rest stops are in here alongside forecourts for the same reason: both
+// are somewhere you *can* meet, neither is somewhere you'd choose. That
+// makes them fill in exactly when nothing else is around — which is the
+// situation a highway meeting point creates.
+const LAST_RESORT = new Set(['fuel', 'rest']);
 
 // Real drive seconds when we have them, straight-line miles otherwise.
 // Both work as "cost to get there"; only the wording changes.
@@ -1262,7 +1323,8 @@ function reasonFor(s, scored){
     food:'and somewhere to eat',
     bar:'and a proper bar',
     park:'and it is outdoors',
-    fuel:'though it is only a gas station — slim pickings around here'
+    fuel:'though it is only a gas station — slim pickings around here',
+    rest:'a rest stop with fuel, which is the safe option out this way'
   }[s.v.kind];
   if (kindWord) bits.push(kindWord);
 
@@ -1300,6 +1362,11 @@ async function findSpot(){
   try{ venues = await fetchVenues(geoPoint); }
   catch(err){ venues = []; venueError = err.message; }
 
+  // A rest area with no fuel is a lay-by. Somewhere to pull over, not
+  // somewhere to arrange to meet a friend, so it never gets suggested.
+  markFuelledRestStops(venues);
+  venues = venues.filter(v => v.kind !== 'rest' || v.hasFuel);
+
   let winner = null;
 
   if (driveMode && serverUrl){
@@ -1330,23 +1397,55 @@ async function findSpot(){
     setWhy('Drive time is selected, but no routing server is connected. Paste your function URL under "How it measures" and hit Save.');
   }
 
+  // Straight-line mode never asked a routing server anything, so rank the
+  // venues on crow-flight legs. Done here rather than later because the
+  // highway check below needs somewhere safe to move to.
+  if (!lastRanked.length && venues.length){
+    lastRanked = rankPlaces(active, targets, spreadOut(venues, meetPoint, MAX_CANDIDATES), null);
+  }
+
   renderSplit(active);
 
   if (winner && winner.name){
     $('#spotName').textContent = winner.name;
   } else {
-    $('#spotName').textContent = 'Finding the address…';
-    const name = await reverse(meetPoint.lat, meetPoint.lng);
-    $('#spotName').textContent = name
-      ? name.split(', ').slice(0,4).join(', ')
-      : `${meetPoint.lat.toFixed(4)}, ${meetPoint.lng.toFixed(4)}`;
-  }
+    // No named venue won, so the answer is a bare coordinate — and a bare
+    // coordinate can land in the middle of a motorway. Check before
+    // telling anybody to meet there.
+    $('#spotName').textContent = 'Checking the spot…';
+    const [place, onHighway] = await Promise.all([
+      reverseFull(meetPoint.lat, meetPoint.lng),
+      isOnHighway(meetPoint.lat, meetPoint.lng)
+    ]);
 
-  // Straight-line mode never asked a routing server anything, so rank the
-  // venues on crow-flight legs instead. The headline point stays the
-  // geometric answer; these are real places to actually sit, near it.
-  if (!lastRanked.length && venues.length){
-    lastRanked = rankPlaces(active, targets, spreadOut(venues, meetPoint, MAX_CANDIDATES), null);
+    if (onHighway){
+      // Prefer somewhere you'd actually choose; fall back to a forecourt
+      // or a fuelled rest stop, which beats standing on a hard shoulder.
+      const safe = lastRanked.find(s => s.v.name && !s.lastResort)
+                || lastRanked.find(s => s.v.name);
+      if (safe){
+        chosenPlace = safe;
+        winner = safe.v;
+        meetPoint = { lat: safe.v.lat, lng: safe.v.lng };
+        lastMetrics = {
+          unit: safe.unit,
+          values: safe.unit === 'min' ? safe.legs.map(x => x/60) : safe.legs.slice()
+        };
+        $('#spotName').textContent = safe.v.name;
+        $('#modeBadge').textContent = safe.unit === 'min' ? 'Drive time' : 'Straight line';
+        $('#modeBadge').classList.toggle('live', safe.unit === 'min');
+        renderSplit(active);
+        setWhy('The fair point between you lands on a highway, which is nowhere to meet anybody. Moved to the nearest place you can actually stop.');
+      } else {
+        $('#spotName').textContent = 'Nowhere safe to stop';
+        setWhy('The fair point between you lands on a highway and nothing nearby came back as somewhere you could safely stop. Try a different split, or add a bit of detour by moving one person’s slider.');
+      }
+    } else {
+      const name = place?.display_name || '';
+      $('#spotName').textContent = name
+        ? name.split(', ').slice(0,4).join(', ')
+        : `${meetPoint.lat.toFixed(4)}, ${meetPoint.lng.toFixed(4)}`;
+    }
   }
 
   renderPicks();
@@ -1616,7 +1715,7 @@ function renderVenueSection(){
     return;
   }
   const present = ['all', ...new Set(venues.map(v=>v.kind))];
-  const labels = {all:'All',coffee:'Coffee',bar:'Bar',food:'Food',fuel:'Gas',park:'Park'};
+  const labels = {all:'All',coffee:'Coffee',bar:'Bar',food:'Food',fuel:'Gas',park:'Park',rest:'Rest stop'};
   activeFilter = 'all';
   $('#filters').innerHTML = '';
   present.forEach(k=>{

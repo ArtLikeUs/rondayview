@@ -59,6 +59,8 @@ const LIMITS: Record<string, number> = {
   venues:  80,
   geocode: 200,
   reverse: 200,
+  road_check: 120,
+  notify_application: 10,
   // Generous: a real session legitimately reports several ads, and the
   // dedupe rule downstream is what actually keeps the totals honest.
   ad_event: 400,
@@ -226,11 +228,17 @@ async function handleVenues(body: any): Promise<Response> {
   }
   const radius = Math.min(Math.max(Number(body?.radius) || 2600, 300), 8000);
 
+  // Rest areas and motorway services are asked for on purpose. They are
+  // the one kind of place beside a fast road where stopping to meet
+  // somebody is a normal thing to do rather than a hazard, so they are
+  // the exception that makes the highway rule workable instead of just
+  // leaving people with nowhere.
   const query = `[out:json][timeout:25];
 (
   nwr["amenity"~"^(cafe|bar|pub|restaurant|fast_food|ice_cream|biergarten)$"]["name"](around:${radius},${lat},${lng});
   nwr["amenity"="fuel"](around:${radius},${lat},${lng});
   nwr["leisure"="park"]["name"](around:${radius},${lat},${lng});
+  nwr["highway"~"^(services|rest_area)$"](around:${radius},${lat},${lng});
 );
 out center 150;`;
 
@@ -348,7 +356,156 @@ async function handleReverse(body: any): Promise<Response> {
 }
 
 
-// ---------- job 5: counting an ad ----------
+// ---------- job 5: is this point stuck on a fast road? ----------
+//
+// Asked of the road network directly, because the obvious method does
+// not work. Reverse geocoding returns the nearest *named* feature, which
+// beside a motorway is regularly a school, a trail, or a service road a
+// hundred metres away — so a point in live traffic comes back looking
+// like a quiet street. Tested and confirmed before writing this.
+//
+// Overpass knows where the carriageways actually are. If one passes
+// within 30 metres of the point, that point is on or beside it.
+async function handleRoadCheck(body: any): Promise<Response> {
+  const lat = Number(body?.lat), lng = Number(body?.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) ||
+      Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+    return json({ error: "lat and lng must be valid coordinates." }, 400);
+  }
+
+  const key = `road:${lat.toFixed(4)},${lng.toFixed(4)}`;
+  const cached = await rpc("geocode_lookup", { key });
+  if (cached) return json({ ...(cached as object), cached: true });
+
+  const query = `[out:json][timeout:20];
+way(around:30,${lat},${lng})["highway"~"^(motorway|motorway_link|trunk|trunk_link)$"];
+out tags 3;`;
+
+  for (const url of OVERPASS_MIRRORS) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": UA },
+        body: "data=" + encodeURIComponent(query),
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!res.ok) continue;
+      const text = await res.text();
+      let data: any;
+      try { data = JSON.parse(text); } catch { continue; }
+
+      const roads = (data.elements ?? []) as any[];
+      const payload = {
+        onHighway: roads.length > 0,
+        roads: roads.map(r => r.tags?.ref || r.tags?.name || r.tags?.highway).filter(Boolean).slice(0, 3),
+      };
+      await rpc("geocode_store", { key, kind_in: "reverse", payload });
+      return json({ ...payload, cached: false });
+    } catch (_e) { /* try the next mirror */ }
+  }
+
+  // Nobody answered. Say so rather than guessing — the caller treats an
+  // unknown as safe, because refusing every meeting point whenever
+  // Overpass is busy would be its own kind of broken.
+  console.error("road check: no Overpass mirror answered");
+  return json({ onHighway: false, unknown: true });
+}
+
+
+// ---------- job 6: tell the owner an application landed ----------
+//
+// Fired by the page after an application is saved. It cannot be used to
+// email anybody else: the recipient is fixed below, so the worst a
+// determined caller achieves is telling you about your own inbox twice,
+// and the once-per-application guard stops even that.
+//
+// It reads the application with the service role key rather than
+// trusting what the page sent, so the email describes what is actually
+// in the database.
+const OWNER_EMAIL = "beholdalu@gmail.com";
+const MAIL_FROM   = "We Rondayview <hello@rondayview.com>";
+const RESEND_KEY  = Deno.env.get("RESEND_API_KEY");
+
+function escapeHtml(s: string): string {
+  return String(s ?? "").replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
+}
+
+async function handleNotifyApplication(body: any): Promise<Response> {
+  const id = String(body?.application_id ?? "");
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return json({ error: "Bad application id." }, 400);
+
+  // One email per application, ever.
+  const first = await rpc("rate_limit_hit", {
+    bucket_key: `appnotify:${id}`, max_hits: 1, window_seconds: 86400,
+  });
+  if (first !== true) return json({ ok: true, sent: false });
+
+  if (!RESEND_KEY || !SB_URL || !SB_KEY) {
+    console.error("RESEND_API_KEY is not set; cannot send the notification.");
+    return json({ ok: true, sent: false });
+  }
+
+  // Read it back rather than trusting the caller's description of it.
+  let app: any = null;
+  try {
+    const res = await fetch(
+      `${SB_URL}/rest/v1/advertiser_applications?id=eq.${id}&select=business_name,contact_email,contact_phone,website,message,status`,
+      { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` },
+        signal: AbortSignal.timeout(5000) },
+    );
+    app = (await res.json())?.[0] ?? null;
+  } catch (e) {
+    console.error("could not read application:", e);
+  }
+  if (!app || app.status !== "pending") return json({ ok: true, sent: false });
+
+  const rows = [
+    ["Business", app.business_name],
+    ["Email", app.contact_email],
+    ["Phone", app.contact_phone],
+    ["Website", app.website],
+  ].filter(([, v]) => v)
+   .map(([k, v]) => `<tr><td style="padding:4px 12px 4px 0;color:#584a72">${k}</td><td style="padding:4px 0"><strong>${escapeHtml(String(v))}</strong></td></tr>`)
+   .join("");
+
+  const html = `
+    <div style="font-family:-apple-system,Segoe UI,sans-serif;font-size:15px;color:#221833;line-height:1.5">
+      <p style="font-size:17px;margin:0 0 14px"><strong>Somebody wants to advertise.</strong></p>
+      <table style="border-collapse:collapse;margin-bottom:14px">${rows}</table>
+      ${app.message ? `<p style="background:#f5f1fb;border-left:3px solid #E0246E;padding:10px 12px;margin:0 0 16px">${escapeHtml(app.message)}</p>` : ""}
+      <p style="margin:0"><a href="https://rondayview.com/advertise.html"
+         style="background:#E0246E;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;display:inline-block">
+         Review it</a></p>
+    </div>`;
+
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        from: MAIL_FROM,
+        to: [OWNER_EMAIL],
+        reply_to: app.contact_email || undefined,
+        subject: `Advertising request — ${app.business_name}`,
+        html,
+      }),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) {
+      console.error("resend returned", res.status, await res.text());
+      return json({ ok: true, sent: false });
+    }
+  } catch (e) {
+    console.error("resend unreachable:", e);
+    return json({ ok: true, sent: false });
+  }
+
+  return json({ ok: true, sent: true });
+}
+
+
+// ---------- job 7: counting an ad ----------
 //
 // The browser asks; it does not tell. Recording happens here with the
 // service role key, which the page never sees, so an inflated number
@@ -403,11 +560,13 @@ Deno.serve(async (req: Request) => {
   const kind = body?.kind ?? "matrix";
 
   const handlers: Record<string, (b: any) => Promise<Response>> = {
-    matrix:  handleMatrix,
-    venues:  handleVenues,
-    geocode: handleGeocode,
-    reverse: handleReverse,
-    ad_event: (b) => handleAdEvent(req, b),
+    matrix:     handleMatrix,
+    venues:     handleVenues,
+    geocode:    handleGeocode,
+    reverse:    handleReverse,
+    road_check: handleRoadCheck,
+    ad_event:   (b) => handleAdEvent(req, b),
+    notify_application: handleNotifyApplication,
   };
 
   const handler = handlers[kind];

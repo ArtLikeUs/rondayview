@@ -297,19 +297,27 @@ function wire(){
     const name = $('#biz').value.trim();
     if (name.length < 2){ toast('What is the business called?'); return; }
     b.disabled = true; b.textContent = 'Sending…';
-    const { error } = await sb.from('advertiser_applications').insert({
+    const { data: saved, error } = await sb.from('advertiser_applications').insert({
       user_id: session.user.id,
       business_name: name,
       contact_email: $('#mail').value.trim() || null,
       contact_phone: $('#phone').value.trim() || null,
       website: $('#site').value.trim() || null,
       message: $('#msg').value.trim() || null
-    });
+    }).select('id').single();
     if (error){
       toast(error.code === '23505' ? 'You already have an application waiting.' : error.message);
       b.disabled = false; b.textContent = 'Send it';
       return;
     }
+
+    // Nudge the owner. Deliberately not awaited and deliberately not
+    // checked: the application is already saved, and a mail server
+    // having a bad minute is not the applicant's problem to look at.
+    fetch(`${SUPABASE_URL}/functions/v1/route-matrix`, {
+      method:'POST', headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({ kind:'notify_application', application_id: saved.id })
+    }).catch(e => console.error('notify', e));
     toast('Sent. We will be in touch.');
     await load(); render();
   });
