@@ -51,9 +51,10 @@ properly authenticated rather than relayed.
 
 8. Sign out of the app and request a link to test it.
 
-`hello@rondayview.com` does not need to be a real inbox to send from. If you
-want replies to reach you, set up forwarding at your registrar — most include
-it free.
+`hello@rondayview.com` does not need to be a real inbox to send from — Resend
+only needs the domain verified. If you want replies to reach you, check whether
+your Squarespace domain includes email forwarding; if it does not, point the
+sender at an address you already read instead.
 
 ---
 
@@ -65,7 +66,24 @@ it free.
 resolve.** The moment a custom domain is set, the github.io address redirects to
 it — so if DNS is not ready yet, the site goes dark until it is.
 
-### At your registrar
+### At Squarespace
+
+**account.squarespace.com/domains** → click **rondayview.com** → **DNS** in the
+side panel → **Add record**.
+
+Two things about Squarespace specifically, before you start:
+
+- **Clear out the parking records first.** Registering a domain there leaves
+  default records pointing at a Squarespace holding page. Any leftover `A`
+  record on host `@` pointing at a Squarespace address will fight the GitHub
+  ones and the result is a coin toss. Delete those; leave anything you did not
+  put there yourself alone otherwise.
+- **Squarespace auto-adds three TXT records** for DKIM, SPF and DMARC when you
+  register. They are removed automatically as soon as you add your own email
+  records, so when Resend's records go in and the Squarespace ones vanish, that
+  is expected rather than something you broke.
+
+### The records
 
 Four **A** records for the apex, all with host `@`:
 
