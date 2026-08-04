@@ -4,11 +4,14 @@
 // This runs on Supabase's servers, NOT in the browser.
 // It is the only thing that ever sees your OpenRouteService key.
 //
-// It handles four jobs, chosen with the "kind" field:
-//   { kind: "matrix",  origins, destinations } -> drive times
-//   { kind: "venues",  lat, lng, radius }      -> nearby places
-//   { kind: "geocode", q }                     -> address to coordinates
-//   { kind: "reverse", lat, lng }              -> coordinates to address
+// It handles seven jobs, chosen with the "kind" field:
+//   { kind: "matrix",     origins, destinations } -> drive times
+//   { kind: "venues",     lat, lng, radius }      -> nearby places
+//   { kind: "geocode",    q }                     -> address to coordinates
+//   { kind: "reverse",    lat, lng }              -> coordinates to address
+//   { kind: "road_check", lat, lng }              -> is this in live traffic?
+//   { kind: "ad_event",   ad, event }             -> count an impression
+//   { kind: "notify_application", application_id } -> tell the owner
 //
 // Everything that talks to somebody else's service lives here rather
 // than in the browser, for two different reasons.
@@ -50,6 +53,51 @@ const NOMINATIM = "https://nominatim.openstreetmap.org";
 // contacted. A generic browser User-Agent is exactly what they ask you
 // not to send.
 const UA = "WeRondayview/1.0 (https://rondayview.com; beholdalu@gmail.com)";
+
+
+// How long any one Overpass mirror gets before we stop caring.
+//
+// This used to be 20 seconds per mirror, tried in turn, so three busy
+// mirrors cost 48 seconds before returning an error. Measured, not
+// guessed. Racing them means the slow ones no longer add up, and eight
+// seconds is long enough for a healthy mirror and short enough that a
+// total outage is over quickly.
+const OVERPASS_TIMEOUT_MS = 8000;
+
+// Ask every mirror at once and take the first real answer.
+//
+// Overpass is free and volunteer-run, so at any moment some mirrors are
+// busy and some are fine. Asking them in turn means paying for every
+// busy one before reaching a working one; asking together means paying
+// only for the fastest.
+async function overpass(query: string): Promise<any> {
+  const attempt = async (url: string) => {
+    const host = new URL(url).hostname;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": UA,
+      },
+      body: "data=" + encodeURIComponent(query),
+      signal: AbortSignal.timeout(OVERPASS_TIMEOUT_MS),
+    });
+    if (!res.ok) throw new Error(`${host}: HTTP ${res.status}`);
+    // A busy Overpass answers with an HTML error page instead of JSON.
+    const text = await res.text();
+    let data: any;
+    try { data = JSON.parse(text); }
+    catch { throw new Error(`${host}: non-JSON reply`); }
+    return { data, host };
+  };
+
+  try {
+    return await Promise.any(OVERPASS_MIRRORS.map(attempt));
+  } catch (err) {
+    const reasons = (err as AggregateError).errors?.map(e => (e as Error).message).join("; ");
+    throw new Error(reasons || "no Overpass mirror answered");
+  }
+}
 
 // Per caller, per hour. Generous for a person, tight for a script.
 // Matrix is the strict one because it is the only job that spends a
@@ -228,55 +276,41 @@ async function handleVenues(body: any): Promise<Response> {
   }
   const radius = Math.min(Math.max(Number(body?.radius) || 2600, 300), 8000);
 
+  // Rounded to about 110 metres. Two people searching the same
+  // neighbourhood share an answer instead of each paying for one, which
+  // matters more the more people use this.
+  const key = `venues:${lat.toFixed(3)},${lng.toFixed(3)}:${radius}`;
+  const cached = await rpc("geocode_lookup", { key, max_age_days: 21 });
+  if (cached) return json({ elements: cached, source: "cache", cached: true });
+
   // Rest areas and motorway services are asked for on purpose. They are
   // the one kind of place beside a fast road where stopping to meet
   // somebody is a normal thing to do rather than a hazard, so they are
   // the exception that makes the highway rule workable instead of just
   // leaving people with nowhere.
-  const query = `[out:json][timeout:25];
+  //
+  // 80 results rather than 150: the app only ever ranks 25 candidates
+  // and shows 14, so the rest was paid for and thrown away.
+  const query = `[out:json][timeout:12];
 (
   nwr["amenity"~"^(cafe|bar|pub|restaurant|fast_food|ice_cream|biergarten)$"]["name"](around:${radius},${lat},${lng});
   nwr["amenity"="fuel"](around:${radius},${lat},${lng});
   nwr["leisure"="park"]["name"](around:${radius},${lat},${lng});
   nwr["highway"~"^(services|rest_area)$"](around:${radius},${lat},${lng});
 );
-out center 150;`;
+out center 80;`;
 
-  const tried: string[] = [];
-
-  for (const url of OVERPASS_MIRRORS) {
-    const host = new URL(url).hostname;
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          "User-Agent": UA,
-        },
-        body: "data=" + encodeURIComponent(query),
-        signal: AbortSignal.timeout(20000),
-      });
-
-      if (!res.ok) {
-        tried.push(`${host}: HTTP ${res.status}`);
-        continue;
-      }
-
-      // A busy Overpass answers with an HTML error page instead of JSON.
-      const text = await res.text();
-      try {
-        const data = JSON.parse(text);
-        return json({ elements: data.elements ?? [], source: host });
-      } catch {
-        tried.push(`${host}: non-JSON reply`);
-      }
-    } catch (e) {
-      tried.push(`${host}: ${(e as Error).name === "TimeoutError" ? "timed out" : "unreachable"}`);
+  try {
+    const { data, host } = await overpass(query);
+    const elements = data.elements ?? [];
+    if (elements.length) {
+      await rpc("geocode_store", { key, kind_in: "venues", payload: elements });
     }
+    return json({ elements, source: host, cached: false });
+  } catch (e) {
+    console.error("venue lookup failed:", (e as Error).message);
+    return json({ error: `No venue directory answered (${(e as Error).message})` }, 502);
   }
-
-  console.error("All Overpass mirrors failed:", tried.join(" | "));
-  return json({ error: `No venue directory answered (${tried.join("; ")})` }, 502);
 }
 
 // ---------- jobs 3 and 4: addresses ----------
@@ -381,27 +415,17 @@ async function handleRoadCheck(body: any): Promise<Response> {
 way(around:30,${lat},${lng})["highway"~"^(motorway|motorway_link|trunk|trunk_link)$"];
 out tags 3;`;
 
-  for (const url of OVERPASS_MIRRORS) {
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": UA },
-        body: "data=" + encodeURIComponent(query),
-        signal: AbortSignal.timeout(15000),
-      });
-      if (!res.ok) continue;
-      const text = await res.text();
-      let data: any;
-      try { data = JSON.parse(text); } catch { continue; }
-
-      const roads = (data.elements ?? []) as any[];
-      const payload = {
-        onHighway: roads.length > 0,
-        roads: roads.map(r => r.tags?.ref || r.tags?.name || r.tags?.highway).filter(Boolean).slice(0, 3),
-      };
-      await rpc("geocode_store", { key, kind_in: "reverse", payload });
-      return json({ ...payload, cached: false });
-    } catch (_e) { /* try the next mirror */ }
+  try {
+    const { data } = await overpass(query);
+    const roads = (data.elements ?? []) as any[];
+    const payload = {
+      onHighway: roads.length > 0,
+      roads: roads.map(r => r.tags?.ref || r.tags?.name || r.tags?.highway).filter(Boolean).slice(0, 3),
+    };
+    await rpc("geocode_store", { key, kind_in: "road", payload });
+    return json({ ...payload, cached: false });
+  } catch (e) {
+    console.error("road check:", (e as Error).message);
   }
 
   // Nobody answered. Say so rather than guessing — the caller treats an
