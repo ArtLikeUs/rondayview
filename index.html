@@ -337,6 +337,140 @@ details.adv summary:hover{color:var(--mag)}
 .avatar-edit .avatar{width:64px;height:64px;font-size:24px}
 .avatar-edit .pick{flex:1;min-width:0}
 
+/* ============================================================
+   NAVIGATION-APP LAYOUT
+
+   Map underneath, controls floating on top, results in a sheet that
+   comes up from the bottom. The arrangement everybody already knows
+   from every maps app on their phone, so there is nothing to learn.
+   ============================================================ */
+html,body{height:100%;overflow:hidden}
+.shell{position:fixed;inset:0}
+#map{position:absolute;inset:0;height:auto;min-height:0;width:100%;z-index:0}
+
+.top{
+  position:absolute;top:0;left:0;right:0;z-index:500;
+  padding:calc(8px + env(safe-area-inset-top)) 10px 0;
+  pointer-events:none;   /* the map stays draggable between the cards */
+}
+.top > *{pointer-events:auto}
+
+.topbar{
+  display:flex;align-items:center;gap:10px;padding:6px 4px 8px;
+}
+.wordmark{
+  font-family:var(--display);font-weight:800;font-size:19px;letter-spacing:-.03em;
+  color:#fff;text-shadow:0 1px 6px rgba(34,24,51,.55);flex:1;min-width:0;
+}
+.wordmark em{font-style:normal;color:var(--mag)}
+.round{
+  width:38px;height:38px;border-radius:50%;background:#fff;border:1px solid var(--line);
+  display:grid;place-items:center;box-shadow:0 2px 10px rgba(34,24,51,.25);
+  font-size:16px;color:var(--ink);flex:none;padding:0;overflow:hidden;
+}
+.round:hover{border-color:var(--mag);color:var(--mag)}
+.round img{width:100%;height:100%;object-fit:cover}
+
+.entry{
+  background:var(--card);border-radius:16px;box-shadow:0 4px 20px -4px rgba(34,24,51,.35);
+  overflow:hidden;max-height:calc(100vh - 210px);overflow-y:auto;
+}
+.entry-foot{display:flex;align-items:center;gap:10px;padding:0 12px 12px}
+.entry-foot .ghost{flex:1}
+.entry .go{border-radius:0;padding:15px}
+.lbl2{
+  font-family:var(--mono);font-size:10px;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--ink-2);margin:14px 0 7px;
+}
+.lbl2:first-child{margin-top:0}
+details.opts{border-top:1px solid var(--line);background:#faf8fd}
+details.opts > summary{
+  padding:11px 13px;font-family:var(--mono);font-size:10.5px;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--ink-2);cursor:pointer;list-style:none;
+}
+details.opts > summary::-webkit-details-marker{display:none}
+details.opts > summary::after{content:' ▾';color:var(--mag)}
+details.opts[open] > summary::after{content:' ▴'}
+.opts-bd{padding:0 13px 14px}
+
+/* ---------- the sheet ---------- */
+.sheet{
+  position:absolute;left:0;right:0;bottom:0;z-index:600;
+  background:var(--card);border-radius:18px 18px 0 0;
+  box-shadow:0 -4px 26px -6px rgba(34,24,51,.4);
+  transform:translateY(100%);transition:transform .3s cubic-bezier(.32,.72,0,1);
+  max-height:82vh;display:flex;flex-direction:column;
+  padding-bottom:env(safe-area-inset-bottom);
+}
+.sheet.peek{transform:translateY(calc(100% - 232px))}
+.sheet.open{transform:translateY(0)}
+.grab{
+  width:100%;border:0;background:none;padding:9px 0 5px;flex:none;
+  display:grid;place-items:center;cursor:grab;touch-action:none;
+}
+.grab::before{content:'';width:38px;height:4.5px;border-radius:99px;background:var(--line-2)}
+.sheet-scroll{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0 0 18px}
+.sheet .card{
+  border:0;border-radius:0;box-shadow:none;margin:0;
+  border-bottom:1px solid var(--line);
+}
+.sheet .card:last-child{border-bottom:0}
+.sheet #adBanner{padding:0 14px}
+.sheet #adBanner .ad{margin:14px 0 0}
+
+/* ---------- the drawer: account, friends, saved ----------
+   Everything that is about you rather than about this trip. Kept
+   behind one button so the map is not competing with an account
+   panel for the screen. */
+.drawer{position:fixed;inset:0;z-index:9000;display:none}
+.drawer.on{display:block}
+.drawer .veil{position:absolute;inset:0;background:rgba(34,24,51,.5)}
+.drawer .panel{
+  position:absolute;top:0;right:0;bottom:0;width:min(400px,88vw);
+  background:var(--paper);box-shadow:-8px 0 30px -10px rgba(34,24,51,.5);
+  display:flex;flex-direction:column;
+  animation:slideIn .26s cubic-bezier(.32,.72,0,1);
+}
+@keyframes slideIn{from{transform:translateX(100%)}to{transform:translateX(0)}}
+.drawer .panel-hd{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:calc(14px + env(safe-area-inset-top)) 14px 12px;background:var(--ink);color:#fff;
+}
+.drawer .panel-hd h2{margin:0;font-family:var(--display);font-weight:700;font-size:20px;letter-spacing:-.02em}
+.drawer .panel-hd .iconbtn{background:transparent;border-color:#5a4a78;color:#fff}
+.drawer .panel-bd{overflow-y:auto;padding:14px 12px 30px;flex:1}
+@media (prefers-reduced-motion:reduce){.drawer .panel{animation:none}}
+
+/* Desktop: one floating column over the map, like the big maps apps. */
+@media (min-width:900px){
+  .top{width:396px;right:auto;padding:14px 0 0 14px}
+  /* The entry and the results share one column, so they have to agree
+     on how tall each is allowed to be or the results slide over the
+     Find button. Capped rather than left to the content. */
+  .entry{max-height:46vh}
+  .sheet{
+    left:14px;width:396px;right:auto;bottom:14px;top:auto;border-radius:16px;
+    max-height:44vh;transform:none;box-shadow:0 8px 30px -8px rgba(34,24,51,.45);
+  }
+  .sheet:not(.peek):not(.open){display:none}
+  .grab{display:none}
+}
+
+/* The entry card is the only thing between you and the map, so it earns
+   its space: tighter rows than the old stacked-card layout had. */
+.entry .person{padding:10px 12px}
+.entry .person-top{margin-bottom:6px}
+.entry .addr{padding:9px 10px}
+.entry .share{margin-top:8px}
+.entry .ghost{padding:9px}
+#goHint{
+  display:inline-block;background:rgba(34,24,51,.82);color:#fff!important;
+  padding:5px 11px;border-radius:99px;text-shadow:none!important;backdrop-filter:blur(4px);
+}
+/* Keep the zoom buttons above the sheet rather than under it. */
+.leaflet-bottom.leaflet-right{bottom:246px}
+@media (min-width:900px){ .leaflet-bottom.leaflet-right{bottom:0} }
+
 .toast{
   position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(80px);
   background:var(--ink);color:#fff;padding:11px 18px;border-radius:99px;font-size:13.5px;
@@ -350,124 +484,138 @@ details.adv summary:hover{color:var(--mag)}
 </head>
 <body>
 
-<header class="masthead">
-  <svg class="converge" viewBox="0 0 400 120" preserveAspectRatio="none" aria-hidden="true">
-    <path d="M0,12 C120,12 150,60 400,60" fill="none" stroke="#0E9E9E" stroke-width="1.5"/>
-    <path d="M0,112 C120,112 150,60 400,60" fill="none" stroke="#6C4DE0" stroke-width="1.5"/>
-    <path d="M0,62 C160,62 180,60 400,60" fill="none" stroke="#E8830C" stroke-width="1.5"/>
-    <path d="M0,96 C140,96 160,60 400,60" fill="none" stroke="#2B6CE0" stroke-width="1.5"/>
-  </svg>
-  <h1 class="brand">We <em>Rondayview</em></h1>
-  <p class="tag">Everybody drives a little. Nobody drives all of it.</p>
-</header>
+<div class="shell">
+  <div id="map"></div>
 
-<div class="wrap">
-  <div class="col-left">
+  <div class="top">
+    <div class="topbar">
+      <span class="wordmark">We <em>Rondayview</em></span>
+      <button class="round" id="menuBtn" aria-label="Your account and friends">
+        <span id="menuFace">&#9776;</span>
+      </button>
+    </div>
 
-    <section class="card" id="acctCard">
-      <div class="card-hd"><h2>Your account</h2><span class="note" id="acctNote"></span></div>
-      <div id="acctBody"></div>
-    </section>
-
-    <section class="card hide" id="friendsCard">
-      <div class="card-hd"><h2>Friends</h2><span class="note" id="friendsNote"></span></div>
-      <div class="card-bd" id="friendsBody"></div>
-    </section>
-
-    <section class="card hide" id="savedCard">
-      <div class="card-hd"><h2>Saved meetups</h2><span class="note" id="savedNote"></span></div>
-      <div class="card-bd" id="savedBody"></div>
-    </section>
-
-    <section class="card">
-      <div class="card-hd"><h2>Who's coming</h2><span class="note" id="countNote">2 of 4</span></div>
+    <div class="entry">
       <div id="people"></div>
-      <div class="card-bd" style="padding-top:0">
+      <div class="entry-foot">
         <button class="ghost" id="addBtn">+ Add another person</button>
+        <span class="note" id="countNote">2 of 4</span>
       </div>
-    </section>
 
-    <section class="card">
-      <div class="card-hd"><h2>Who drives further</h2></div>
-      <div class="card-bd">
-        <div class="row" id="presets"></div>
-        <p class="note" style="margin:11px 0 0">The sliders are linked and always add up to 100%. Push one person up and everyone else drops to make room.</p>
-      </div>
-    </section>
+      <details class="opts">
+        <summary>Options</summary>
+        <div class="opts-bd">
+          <p class="lbl2">Who drives further</p>
+          <div class="row" id="presets"></div>
+          <p class="note" style="margin:9px 0 0">The sliders are linked and always add up to
+          100%. Push one person up and everyone else drops to make room.</p>
 
-    <section class="card">
-      <div class="card-hd"><h2>How it measures</h2></div>
-      <div class="card-bd">
-        <div class="row">
-          <button class="chip on" id="modeStraight">Straight line</button>
-          <button class="chip" id="modeDrive">Drive time</button>
+          <p class="lbl2">How it measures</p>
+          <div class="row">
+            <button class="chip on" id="modeStraight">Straight line</button>
+            <button class="chip" id="modeDrive">Drive time</button>
+          </div>
+          <p class="note" id="modeNote" style="margin:9px 0 0">Straight line is instant and free.
+          Drive time uses real roads, but needs your routing server connected.</p>
+          <div id="serverBox" class="hide">
+            <p class="note ok" id="serverNote" style="margin:9px 0 0">Connected.</p>
+            <details class="adv">
+              <summary>Change routing server</summary>
+              <div class="field">
+                <input id="fnUrl" placeholder="https://xxxx.supabase.co/functions/v1/route-matrix"
+                       autocomplete="off" spellcheck="false" aria-label="Routing server address">
+                <button id="saveUrl">Save</button>
+              </div>
+              <p class="note" style="margin:9px 0 0">Empty the box and hit Save to go back to the
+              built-in address.</p>
+            </details>
+          </div>
+
+          <p class="lbl2">How the split is calculated</p>
+          <p class="note"><strong>Straight line</strong> measures crow-flight miles. On a normal
+          city grid it lands close to fair. Across a canyon, a bridge, or a freeway with no
+          on-ramp, the crow wins and you don't.</p>
+          <p class="note" style="margin-top:7px"><strong>Drive time</strong> pulls real venues near
+          the straight-line answer, asks your routing server how long each person would actually
+          drive to each one, and picks the venue where the real minutes match your requested split
+          most closely.</p>
+          <p class="note" style="margin-top:10px"><a href="privacy.html">Privacy</a> &nbsp;·&nbsp;
+          <a href="advertise.html">Advertise with us</a> &nbsp;·&nbsp; Map data &copy;
+          OpenStreetMap contributors</p>
         </div>
-        <p class="note" id="modeNote" style="margin:11px 0 0">Straight line is instant and free. Drive time uses real roads, but needs your routing server connected.</p>
-        <div id="serverBox" class="hide">
-          <p class="note ok" id="serverNote" style="margin:11px 0 0">Connected.</p>
-          <details class="adv">
-            <summary>Change routing server</summary>
-            <div class="field">
-              <input id="fnUrl" placeholder="https://xxxx.supabase.co/functions/v1/route-matrix" autocomplete="off" spellcheck="false" aria-label="Routing server address">
-              <button id="saveUrl">Save</button>
-            </div>
-            <p class="note" style="margin:9px 0 0">Empty the box and hit Save to go back to the built-in address.</p>
-          </details>
-        </div>
-      </div>
-    </section>
+      </details>
 
-    <button class="go" id="goBtn" disabled>Find the spot</button>
-    <p class="note" id="goHint" style="margin:9px 2px 16px">Set at least 2 locations to start.</p>
-    <div id="adBanner"></div>
+      <button class="go" id="goBtn" disabled>Find the spot</button>
+    </div>
+    <p class="note" id="goHint" style="margin:7px 4px;color:#fff;text-shadow:0 1px 5px rgba(34,24,51,.7)">Set at least 2 locations to start.</p>
   </div>
 
-  <div class="col-right">
-    <section class="card">
-      <div id="map"></div>
-      <details class="how">
-        <summary>How the split is calculated</summary>
-        <p><strong>Straight line</strong> measures crow-flight miles. On a normal city grid it lands close to fair. Across a canyon, a bridge, or a freeway with no on-ramp, the crow wins and you don't.</p>
-        <p><strong>Drive time</strong> pulls real venues near the straight-line answer, asks your routing server how long each person would actually drive to each one, and picks the venue where the real minutes match your requested split most closely.</p>
-      </details>
-    </section>
+  <div class="sheet" id="sheet">
+    <button class="grab" id="grab" aria-label="Drag to expand results"></button>
+    <div class="sheet-scroll">
 
-    <section class="card hide" id="resultCard">
-      <div class="card-bd">
-        <div class="spot">
-          <div class="lab">Meeting point <span class="badge" id="modeBadge">Straight line</span></div>
-          <div class="val" id="spotName">—</div>
-          <div class="why hide" id="modeWhy"></div>
-          <div class="row">
-            <button class="chip" id="copyBtn">Copy plan for the group chat</button>
-            <button class="chip hide" id="saveMeetupBtn">Save this</button>
+      <section class="card hide" id="resultCard">
+        <div class="card-bd">
+          <div class="spot">
+            <div class="lab">Meeting point <span class="badge" id="modeBadge">Straight line</span></div>
+            <div class="val" id="spotName">&mdash;</div>
+            <div class="why hide" id="modeWhy"></div>
+            <div class="row">
+              <button class="chip" id="copyBtn">Copy plan for the group chat</button>
+              <button class="chip hide" id="saveMeetupBtn">Save this</button>
+            </div>
           </div>
+          <div class="fair" id="fairBar"></div>
+          <ul class="legend" id="legend"></ul>
+          <div id="adFeatured" style="margin-top:14px"></div>
         </div>
-        <div class="fair" id="fairBar"></div>
-        <ul class="legend" id="legend"></ul>
-        <div id="adFeatured" style="margin-top:14px"></div>
-      </div>
-    </section>
+      </section>
 
-    <section class="card hide" id="pickCard">
-      <div class="card-hd"><h2>Best places to meet</h2><span class="note" id="pickNote"></span></div>
-      <div class="card-bd" id="picks"></div>
-      <div class="card-bd" id="adSponsored" style="padding-top:0"></div>
-    </section>
+      <section class="card hide" id="pickCard">
+        <div class="card-hd"><h2>Best places to meet</h2><span class="note" id="pickNote"></span></div>
+        <div class="card-bd" id="picks"></div>
+        <div class="card-bd" id="adSponsored" style="padding-top:0"></div>
+      </section>
 
-    <section class="card hide" id="venueCard">
-      <div class="card-hd"><h2>Everything else nearby</h2><span class="note" id="radiusNote"></span></div>
-      <div class="card-bd" style="padding-bottom:4px"><div class="row" id="filters"></div></div>
-      <div class="card-bd" id="venues" style="padding-top:4px"></div>
-    </section>
+      <div id="adBanner"></div>
+
+      <section class="card hide" id="venueCard">
+        <div class="card-hd"><h2>Everything else nearby</h2><span class="note" id="radiusNote"></span></div>
+        <div class="card-bd" style="padding-bottom:4px"><div class="row" id="filters"></div></div>
+        <div class="card-bd" id="venues" style="padding-top:4px"></div>
+      </section>
+
+    </div>
   </div>
 </div>
 
-<footer style="max-width:1120px;margin:0 auto;padding:4px 16px 30px;font-size:12.5px;color:#584a72">
-  <a href="privacy.html" style="color:#E0246E">Privacy</a>
-  &nbsp;·&nbsp; <a href="advertise.html" style="color:#E0246E">Advertise with us</a>
-  &nbsp;·&nbsp; Map data &copy; OpenStreetMap contributors
-</footer>
+<aside class="drawer" id="drawer">
+  <div class="veil" id="drawerVeil"></div>
+  <div class="panel" role="dialog" aria-modal="true" aria-label="Your account">
+    <div class="panel-hd">
+      <h2>You</h2>
+      <button class="iconbtn" id="drawerClose" aria-label="Close">&times;</button>
+    </div>
+    <div class="panel-bd">
+      <section class="card" id="acctCard">
+        <div class="card-hd"><h2>Your account</h2><span class="note" id="acctNote"></span></div>
+        <div id="acctBody"></div>
+      </section>
+
+      <section class="card hide" id="friendsCard">
+        <div class="card-hd"><h2>Friends</h2><span class="note" id="friendsNote"></span></div>
+        <div class="card-bd" id="friendsBody"></div>
+      </section>
+
+      <section class="card hide" id="savedCard">
+        <div class="card-hd"><h2>Saved meetups</h2><span class="note" id="savedNote"></span></div>
+        <div class="card-bd" id="savedBody"></div>
+      </section>
+    </div>
+  </div>
+</aside>
+
+
 
 <div class="toast" id="toast"></div>
 <div id="modalHost"></div>
@@ -519,11 +667,20 @@ const store = {
 };
 
 /* ---------- map ---------- */
-const map = L.map('map', { zoomControl:true, scrollWheelZoom:false }).setView([34.05,-118.25], 10);
+const map = L.map('map', { zoomControl:false, scrollWheelZoom:false }).setView([34.05,-118.25], 10);
 L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
   attribution:'&copy; OpenStreetMap &copy; CARTO', maxZoom:19, subdomains:'abcd'
 }).addTo(map);
 map.on('click', ()=> map.scrollWheelZoom.enable());
+L.control.zoom({ position:'bottomright' }).addTo(map);
+
+// Leaflet caches the size of its container. Rotating a phone or dragging
+// a window edge changes that and it will not notice on its own.
+let resizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => map.invalidateSize(), 150);
+});
 let layer = L.layerGroup().addTo(map);
 
 /* ---------- helpers ---------- */
@@ -1357,6 +1514,18 @@ async function findSpot(){
   setWhy('');
   drawMap();
 
+  // Show what we already know, immediately.
+  //
+  // The geometric point costs nothing — it is arithmetic on numbers
+  // already in the page. Everything after this is enrichment: real
+  // venues, real drive times, a name for the place. Making people watch
+  // a spinner for all of it before seeing anything is what made this
+  // feel slow, and the venue directory can take eight seconds on a good
+  // day. So the answer goes up now and improves in place.
+  $('#spotName').textContent = 'Working it out…';
+  renderSplit(active);
+  sheetState('peek');
+
   // Venues are needed either way: as suggestions, or as drive-time candidates.
   let venueError = null;
   try{ venues = await fetchVenues(geoPoint); }
@@ -1456,7 +1625,6 @@ async function findSpot(){
 
   $('#goBtn').disabled = false;
   $('#goBtn').textContent = 'Find the spot';
-  $('#resultCard').scrollIntoView({behavior:'smooth',block:'nearest'});
 }
 
 function renderSplit(active){
@@ -1925,6 +2093,7 @@ function renderAccount(problem){
   // 2. Connected, nobody signed in.
   if (!session){
     note.textContent = 'Signed out';
+    syncMenuFace();
     host.innerHTML = `
       <div class="card-bd">
         <p class="note">Sign in to save your address, keep your meetups, and add friends.
@@ -1978,6 +2147,7 @@ function renderAccount(problem){
       <button class="btn quiet" id="signOut" style="margin-top:11px">Sign out</button>
     </div>`;
 
+  syncMenuFace();
   $('#editProfile').addEventListener('click', openProfileEditor);
   $('#signOut').addEventListener('click', async () => {
     await sb.auth.signOut();
@@ -2536,6 +2706,65 @@ async function saveProfile(){
     console.error(err);
     toast(err.message);
     btn.disabled = false; btn.textContent = 'Save';
+  }
+}
+
+/* ============================================================
+   THE SHEET AND THE DRAWER
+   ============================================================ */
+function sheetState(state){          // 'hidden' | 'peek' | 'open'
+  const el = $('#sheet');
+  el.classList.toggle('peek', state === 'peek');
+  el.classList.toggle('open', state === 'open');
+  // Leaflet measures itself once and then believes it. Anything that
+  // changes how much map is visible has to tell it to look again.
+  setTimeout(() => map.invalidateSize(), 320);
+}
+
+$('#grab').addEventListener('click', () => {
+  const el = $('#sheet');
+  sheetState(el.classList.contains('open') ? 'peek' : 'open');
+});
+
+// Dragging the handle, which is what people will try first.
+(function dragSheet(){
+  const grab = $('#grab');
+  let startY = null;
+  const down = e => { startY = (e.touches ? e.touches[0] : e).clientY; };
+  const up = e => {
+    if (startY === null) return;
+    const endY = (e.changedTouches ? e.changedTouches[0] : e).clientY;
+    const moved = endY - startY;
+    startY = null;
+    if (Math.abs(moved) < 24) return;          // that was a tap; the click handler has it
+    sheetState(moved < 0 ? 'open' : 'peek');
+  };
+  grab.addEventListener('mousedown', down);
+  grab.addEventListener('touchstart', down, { passive:true });
+  window.addEventListener('mouseup', up);
+  window.addEventListener('touchend', up);
+})();
+
+function openDrawer(){ $('#drawer').classList.add('on'); }
+function closeDrawer(){ $('#drawer').classList.remove('on'); }
+$('#menuBtn').addEventListener('click', openDrawer);
+$('#drawerClose').addEventListener('click', closeDrawer);
+$('#drawerVeil').addEventListener('click', closeDrawer);
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && $('#drawer').classList.contains('on')) closeDrawer();
+});
+
+// The menu button wears your face once you have one, which is the signal
+// every other app uses for "your account lives in here".
+function syncMenuFace(){
+  const el = $('#menuFace');
+  if (!el) return;
+  if (profile?.avatar_url){
+    el.outerHTML = `<img id="menuFace" src="${esc(profile.avatar_url)}" alt="">`;
+  } else if (profile?.display_name){
+    el.outerHTML = `<span id="menuFace">${esc(initials(profile.display_name))}</span>`;
+  } else {
+    el.outerHTML = `<span id="menuFace">&#9776;</span>`;
   }
 }
 
