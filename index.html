@@ -537,6 +537,9 @@ details.opts[open] > summary{border-bottom:1px solid var(--line)}
         <button class="ghost" id="addBtn">+ Add another person</button>
         <span class="note" id="countNote">2 of 4</span>
       </div>
+      <div class="entry-foot" style="padding-top:0">
+        <button class="ghost" id="askBtn">Ask someone where they're starting</button>
+      </div>
 
       <details class="opts">
         <summary></summary>
@@ -1225,13 +1228,58 @@ function markFuelledRestStops(list){
   return list;
 }
 
+// Somewhere you can leave the car.
+//
+// A place is acceptable if it is a public car park itself, or if there
+// is one within about 150 metres. Private and customer-only lots do not
+// count — "there is parking" has to mean anybody can use it.
+function markParking(list){
+  const lots = list.filter(v => v.kind === 'parking'
+    && !/^(private|customers|permit|no)$/i.test(v.access || ''));
+  list.forEach(v => {
+    v.hasParking = (v.kind === 'parking' && lots.includes(v))
+      || v.kind === 'rest' || v.kind === 'fuel'   // both are car-first by nature
+      || lots.some(l => haversine(l, v) < 0.093); // ~150 m
+  });
+  return list;
+}
+
+// Widen until there is something real to suggest.
+//
+// A tight radius is right in a city and useless in the country, where
+// the honest answer is a named place twenty miles up the road rather
+// than a coordinate in a field. Each step is only taken when the last
+// one came back thin, so towns still answer on the first try.
+const SEARCH_RADII = [2600, 8000, 20000, 40000];
+const ENOUGH_PLACES = 6;
+
 async function fetchVenues(centre){
   venueSource = null;
   if (!serverUrl) return [];
-  const radius = 2600;
-  const data = await askServer({ kind:'venues', lat:centre.lat, lng:centre.lng, radius });
-  venueSource = data.source || null;
-  return data.places || [];
+
+  let best = [];
+  for (const radius of SEARCH_RADII){
+    let places = [];
+    try{
+      const data = await askServer({ kind:'venues', lat:centre.lat, lng:centre.lng, radius });
+      venueSource = data.source || null;
+      places = data.places || [];
+    }catch(err){
+      console.error(`venues at ${radius}m`, err);
+      continue;
+    }
+
+    markParking(places);
+    markFuelledRestStops(places);
+
+    // Only somewhere with parking, because somebody is driving there.
+    const usable = places.filter(v =>
+      v.hasParking && (v.kind !== 'rest' || v.hasFuel));
+
+    if (usable.length > best.length) best = usable;
+    if (best.length >= ENOUGH_PLACES) break;
+  }
+  return best;
 }
 
 
@@ -1308,7 +1356,7 @@ async function fetchMatrix(origins, candidates){
 // are somewhere you *can* meet, neither is somewhere you'd choose. That
 // makes them fill in exactly when nothing else is around — which is the
 // situation a highway meeting point creates.
-const LAST_RESORT = new Set(['fuel', 'rest']);
+const LAST_RESORT = new Set(['fuel', 'rest', 'parking']);
 
 // Real drive seconds when we have them, straight-line miles otherwise.
 // Both work as "cost to get there"; only the wording changes.
@@ -1401,7 +1449,8 @@ function reasonFor(s, scored){
     bar:'and a proper bar',
     park:'and it is outdoors',
     fuel:'though it is only a gas station — slim pickings around here',
-    rest:'a rest stop with fuel, which is the safe option out this way'
+    rest:'a rest stop with fuel, which is the safe option out this way',
+    parking:'a public car park — the only thing out here with somewhere to leave the car'
   }[s.v.kind];
   if (kindWord) bits.push(kindWord);
 
@@ -1448,14 +1497,8 @@ async function findSpot(){
   sheetState('peek');
 
   // Venues are needed either way: as suggestions, or as drive-time candidates.
-  let venueError = null;
   try{ venues = await fetchVenues(geoPoint); }
-  catch(err){ venues = []; venueError = err.message; }
-
-  // A rest area with no fuel is a lay-by. Somewhere to pull over, not
-  // somewhere to arrange to meet a friend, so it never gets suggested.
-  markFuelledRestStops(venues);
-  venues = venues.filter(v => v.kind !== 'rest' || v.hasFuel);
+  catch(err){ venues = []; console.error('venue lookup', err); }
 
   let winner = null;
 
@@ -1485,9 +1528,7 @@ async function findSpot(){
       if (haversine(centre, geoPoint) > 0.4){
         try{
           const nearer = await fetchVenues(centre);
-          markFuelledRestStops(nearer);
-          const usable = nearer.filter(v => v.kind !== 'rest' || v.hasFuel);
-          if (usable.length) venues = usable;
+          if (nearer.length) venues = nearer;
         }catch(e){ console.error('venues near the balance point failed', e); }
       }
 
@@ -1506,7 +1547,10 @@ async function findSpot(){
         lastMetrics = { unit:'min', values: top.legs.map(sec => sec/60) };
         $('#modeBadge').textContent = 'Drive time';
         $('#modeBadge').classList.add('live');
-        setWhy(venues.length ? '' : `Drive times are real — this spot is genuinely fair. But the venue directory didn't answer (${venueError || 'nothing listed nearby'}), so you're getting a street address instead of a named place. Hit Find the spot again in a minute and it usually comes back.`);
+        // Nothing to explain here. Whether a venue directory answered is
+        // our problem, not something to hand the person who just wanted
+        // somewhere to meet.
+        setWhy('');
       } else {
         setWhy('Drive time ran, but nothing nearby came back as reachable by road. Showing straight-line miles instead.');
       }
@@ -1862,7 +1906,7 @@ function renderVenueSection(){
     return;
   }
   const present = ['all', ...new Set(venues.map(v=>v.kind))];
-  const labels = {all:'All',coffee:'Coffee',bar:'Bar',food:'Food',fuel:'Gas',park:'Park',rest:'Rest stop'};
+  const labels = {all:'All',coffee:'Coffee',bar:'Bar',food:'Food',fuel:'Gas',park:'Park',rest:'Rest stop',parking:'Parking'};
   activeFilter = 'all';
   $('#filters').innerHTML = '';
   present.forEach(k=>{
@@ -2747,8 +2791,255 @@ function syncMenuFace(){
   }
 }
 
+/* ============================================================
+   ASKING PEOPLE WHERE THEY ARE STARTING FROM
+
+   The awkward part of planning a meetup is one person typing everybody
+   else's address, usually wrong, usually after three messages asking
+   for it. This sends a link instead.
+
+   Whoever opens it does not need an account, which is the whole point:
+   the friend who will not sign up for anything is exactly the friend
+   whose address you are chasing.
+   ============================================================ */
+let openRequest = null;      // { token, id } while we are waiting on answers
+let askPoll = null;
+
+function joinLink(token){
+  return `${location.origin}${location.pathname}?join=${token}`;
+}
+
+async function openAskSheet(){
+  if (!sb || !session){
+    toast('Sign in first — the answers come back to your account.');
+    openDrawer();
+    return;
+  }
+  if (people.length >= MAX){ toast(`Up to ${MAX} people.`); return; }
+
+  $('#modalHost').innerHTML = `
+    <div class="modal" id="modalBack">
+      <div class="sheet" role="dialog" aria-modal="true" aria-label="Ask where somebody is starting"
+           style="position:relative;transform:none;max-height:88vh;border-radius:16px">
+        <div class="sheet-hd" style="padding:15px 16px 0;display:flex;justify-content:space-between;align-items:center">
+          <h3 style="margin:0;font-family:var(--display);font-size:20px;letter-spacing:-.02em">Ask where they're starting</h3>
+          <button class="iconbtn" id="closeModal" aria-label="Close">&times;</button>
+        </div>
+        <div class="sheet-bd" style="padding:12px 16px 18px" id="askBody">
+          <p class="note">Making a link…</p>
+        </div>
+      </div>
+    </div>`;
+  $('#closeModal').addEventListener('click', closeModal);
+  $('#modalBack').addEventListener('click', e => { if (e.target.id === 'modalBack') closeModal(); });
+
+  // Reuse the open request rather than making a new link every time the
+  // sheet is opened — otherwise the one already sent stops being the
+  // one being watched.
+  if (!openRequest){
+    const { data, error } = await sb.from('location_requests')
+      .insert({ owner_id: session.user.id, title: 'Where are you starting from?' })
+      .select('id,token').single();
+    if (error){ $('#askBody').innerHTML = `<p class="note bad">${esc(error.message)}</p>`; return; }
+    openRequest = data;
+    startAskPolling();
+  }
+  renderAskSheet();
+}
+
+function renderAskSheet(){
+  const host = $('#askBody');
+  if (!host || !openRequest) return;
+  const link = joinLink(openRequest.token);
+
+  host.innerHTML = `
+    <p class="note">Send this to up to 3 people. They put in where they are
+    starting from and it lands here — no account needed at their end.</p>
+
+    <label class="lbl" for="askLink">The link</label>
+    <div class="field">
+      <input class="inp" id="askLink" readonly value="${esc(link)}">
+      <button id="copyLink">Copy</button>
+    </div>
+    ${navigator.share ? `<button class="btn" id="shareLink">Share it</button>` : ''}
+
+    ${friends.length ? `
+      <p class="sub-hd">Or ask a friend directly</p>
+      ${friends.map(f => `
+        <div class="frow">
+          ${avatarHtml(f)}
+          <span class="who"><span class="nm">${esc(f.display_name)}</span>
+          <span class="at">@${esc(f.handle)}</span></span>
+          <button class="mini solid" data-ask="${f.id}">Ask</button>
+        </div>`).join('')}
+    ` : ''}
+
+    <p class="note" id="askStatus" style="margin-top:14px">Waiting for answers…</p>`;
+
+  $('#copyLink').addEventListener('click', async () => {
+    try{ await navigator.clipboard.writeText(link); toast('Link copied.'); }
+    catch{ $('#askLink').select(); toast('Press copy on your keyboard.'); }
+  });
+  $('#shareLink')?.addEventListener('click', () => {
+    navigator.share({ title:'We Rondayview', text:'Where are you starting from?', url: link })
+      .catch(()=>{});
+  });
+  host.querySelectorAll('[data-ask]').forEach(b => b.addEventListener('click', async () => {
+    b.disabled = true; b.textContent = 'Asked';
+    // A separate request per friend, so their name is attached to the ask.
+    const { error } = await sb.from('location_requests').insert({
+      owner_id: session.user.id,
+      title: 'Where are you starting from?',
+      invited_user_id: b.dataset.ask
+    });
+    if (error){ toast(error.message); b.disabled = false; b.textContent = 'Ask'; return; }
+    toast('Asked. They will see it next time they open the app.');
+  }));
+}
+
+function startAskPolling(){
+  clearInterval(askPoll);
+  askPoll = setInterval(collectAnswers, 4000);
+  collectAnswers();
+}
+
+async function collectAnswers(){
+  if (!openRequest || !sb || !session) return;
+  const { data, error } = await sb.from('location_shares')
+    .select('id,display_name,label,lat,lng')
+    .eq('request_id', openRequest.id)
+    .order('created_at');
+  if (error){ console.error('answers', error); return; }
+
+  let added = 0;
+  (data || []).forEach(ans => {
+    if (people.some(p => p.shareId === ans.id)) return;      // already seated
+    if (people.length >= MAX) return;
+    // An empty starter row gets filled rather than another added.
+    const empty = people.find(p => p.lat === null);
+    const seat = empty || { id: nextId++, weight: 0 };
+    Object.assign(seat, {
+      shareId: ans.id, name: ans.display_name, lat: ans.lat, lng: ans.lng,
+      label: ans.label || '', query: ans.label || ans.display_name
+    });
+    if (!empty) people.push(seat);
+    added++;
+  });
+
+  if (added){
+    normalizeWeights();
+    renderPeople(); renderPresets(); refreshState(); drawMap();
+    toast(added === 1 ? 'Somebody shared their location.' : `${added} people shared their location.`);
+  }
+  const status = $('#askStatus');
+  if (status) status.textContent = (data || []).length
+    ? `${data.length} of 3 answered.`
+    : 'Waiting for answers…';
+}
+
+/* ---------- being on the receiving end ---------- */
+async function maybeShowJoin(){
+  const token = new URLSearchParams(location.search).get('join');
+  if (!token || !sb) return;
+
+  const { data, error } = await sb.rpc('location_request_info', { tok: token });
+  const info = data?.[0];
+  if (error || !info){
+    toast('That link is not valid any more.');
+    return;
+  }
+  if (!info.is_open || info.already_in >= 3){
+    $('#modalHost').innerHTML = `
+      <div class="modal"><div class="sheet" style="position:relative;transform:none;border-radius:16px;max-width:420px">
+        <div class="sheet-bd" style="padding:20px">
+          <h3 style="margin:0 0 8px;font-family:var(--display);font-size:21px">That one has closed</h3>
+          <p class="note">Ask ${esc(info.asked_by)} for a fresh link.</p>
+          <button class="btn" onclick="location.href=location.pathname">Use the app</button>
+        </div></div></div>`;
+    return;
+  }
+
+  $('#modalHost').innerHTML = `
+    <div class="modal">
+      <div class="sheet" role="dialog" aria-modal="true"
+           style="position:relative;transform:none;border-radius:16px;max-width:440px;max-height:90vh">
+        <div class="sheet-bd" style="padding:20px 18px 22px">
+          <h3 style="margin:0 0 6px;font-family:var(--display);font-size:22px;letter-spacing:-.02em">
+            ${esc(info.asked_by)} wants to know where you're starting from</h3>
+          <p class="note">They're working out somewhere fair to meet. This only shares
+          the starting point you give — nothing else, and no account needed.</p>
+
+          <label class="lbl" for="joinName">Your name</label>
+          <input class="inp" id="joinName" maxlength="60" placeholder="What they call you"
+                 value="${esc(profile?.display_name || '')}">
+
+          <label class="lbl" for="joinAddr">Where are you starting from?</label>
+          <div class="field">
+            <input class="inp" id="joinAddr" placeholder="Address, cross streets, or city">
+            <button id="joinGps" title="Use my location">&#9678;</button>
+          </div>
+          <p class="note" id="joinNote" style="margin-top:7px"></p>
+
+          <button class="btn mag" id="joinSend">Share it</button>
+          <button class="btn quiet" onclick="location.href=location.pathname">No thanks</button>
+        </div>
+      </div>
+    </div>`;
+
+  let picked = null;
+  const note = m => { $('#joinNote').textContent = m; };
+
+  $('#joinGps').addEventListener('click', () => {
+    if (!navigator.geolocation){ note('This browser will not share a location.'); return; }
+    note('Finding you…');
+    navigator.geolocation.getCurrentPosition(async pos => {
+      picked = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      const name = await reverse(picked.lat, picked.lng);
+      $('#joinAddr').value = name ? name.split(', ').slice(0,4).join(', ') : 'My location';
+      note('Got it.');
+    }, () => note('Could not get your location. Type it instead.'));
+  });
+
+  $('#joinAddr').addEventListener('input', () => { picked = null; });
+
+  $('#joinSend').addEventListener('click', async () => {
+    const btn = $('#joinSend');
+    const who = $('#joinName').value.trim();
+    const addr = $('#joinAddr').value.trim();
+    if (!who){ note('They need to know who this is.'); return; }
+    if (!picked && !addr){ note('Where are you starting from?'); return; }
+
+    btn.disabled = true; btn.textContent = 'Sharing…';
+    try{
+      let spot = picked, label = addr;
+      if (!spot){
+        const hits = await geocode(addr);
+        if (!hits.length) throw new Error(`Could not find "${addr}".`);
+        spot = { lat: +hits[0].lat, lng: +hits[0].lon };
+        label = hits[0].display_name.split(', ').slice(0,4).join(', ');
+      }
+      const { error: e2 } = await sb.rpc('submit_shared_location', {
+        tok: token, who, in_lat: spot.lat, in_lng: spot.lng, in_label: label
+      });
+      if (e2) throw new Error(e2.message);
+
+      $('#modalHost').innerHTML = `
+        <div class="modal"><div class="sheet" style="position:relative;transform:none;border-radius:16px;max-width:420px">
+          <div class="sheet-bd" style="padding:22px">
+            <h3 style="margin:0 0 8px;font-family:var(--display);font-size:22px">Sent to ${esc(info.asked_by)}</h3>
+            <p class="note">That's all you needed to do. They'll sort out where to meet.</p>
+            <button class="btn mag" onclick="location.href=location.pathname">Have a look at the app</button>
+          </div></div></div>`;
+    }catch(err){
+      note(err.message);
+      btn.disabled = false; btn.textContent = 'Share it';
+    }
+  });
+}
+
 /* ---------- wire up ---------- */
 $('#saveMeetupBtn').addEventListener('click', saveMeetup);
+$('#askBtn').addEventListener('click', openAskSheet);
 $('#addBtn').addEventListener('click', () => {
   if (people.length >= MAX) return;
   people.push({id:nextId++,name:`Person ${people.length+1}`,query:'',lat:null,lng:null,label:'',weight:100/(people.length+1)});
@@ -2764,7 +3055,7 @@ $('#goBtn').addEventListener('click', findSpot);
   $('#fnUrl').value = serverUrl;
   renderMode();
   setTimeout(()=>map.invalidateSize(), 200);
-  initAuth();            // deliberately not awaited — the map should not wait on the network
+  initAuth().then(maybeShowJoin);   // the join sheet needs to know if they are signed in
 
   // Only over https, which rules out opening the file straight off disk.
   if ('serviceWorker' in navigator && location.protocol === 'https:'){

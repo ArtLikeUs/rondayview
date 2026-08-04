@@ -288,6 +288,10 @@ const CATEGORY: Record<string, [string, string]> = {
   restaurant: ["food", "Food"], fast_food: ["food", "Food"],
   fuel: ["fuel", "Gas"], park: ["park", "Park"],
   services: ["rest", "Rest stop"], rest_area: ["rest", "Rest stop"],
+  // A public car park is a legitimate place to meet somebody — it is
+  // where people actually rendezvous to carpool — and it is the only
+  // category that guarantees somewhere to leave the car.
+  parking: ["parking", "Parking"],
 };
 
 // Both sources get flattened to the same shape here rather than in the
@@ -304,12 +308,15 @@ function fromOverpass(elements: any[]): any[] {
     if (!cat) return null;
     const name = e.tags.name || e.tags.brand || e.tags.operator
       || (key === "fuel" ? "Gas station" : null)
-      || (cat[0] === "rest" ? "Rest stop" : null);
+      || (cat[0] === "rest" ? "Rest stop" : null)
+      || (cat[0] === "parking" ? "Public parking" : null);
     if (!name) return null;
     return {
       name, lat, lng, kind: cat[0], kindLabel: cat[1],
       sourceRef: e.type && e.id ? `${e.type}/${e.id}` : null,
       isServices: key === "services",
+      access: e.tags.access ?? null,
+      hasParkingTag: e.tags.parking !== undefined || e.tags["service:vehicle:parking"] !== undefined,
     };
   }).filter(Boolean);
 }
@@ -321,8 +328,9 @@ async function venuesViaOverpass(lat: number, lng: number, radius: number): Prom
   nwr["amenity"="fuel"](around:${radius},${lat},${lng});
   nwr["leisure"="park"]["name"](around:${radius},${lat},${lng});
   nwr["highway"~"^(services|rest_area)$"](around:${radius},${lat},${lng});
+  nwr["amenity"="parking"](around:${radius},${lat},${lng});
 );
-out center 80;`;
+out center 120;`;
   const { data } = await overpass(query);
   const places = fromOverpass(data.elements ?? []);
   if (!places.length) throw new Error("overpass returned nothing usable");
@@ -373,7 +381,10 @@ async function handleVenues(body: any): Promise<Response> {
       Math.abs(lat) > 90 || Math.abs(lng) > 180) {
     return json({ error: "lat and lng must be valid coordinates." }, 400);
   }
-  const radius = Math.min(Math.max(Number(body?.radius) || 2600, 300), 8000);
+  // Up to 40km. Somewhere rural genuinely has nothing inside 8km, and
+  // the app would rather send people half an hour up the road to a real
+  // place than drop them at a coordinate in a field.
+  const radius = Math.min(Math.max(Number(body?.radius) || 2600, 300), 40000);
 
   // Rounded to about 110 metres, so two people searching the same
   // neighbourhood share an answer instead of each paying for one.
