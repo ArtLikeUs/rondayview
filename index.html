@@ -551,12 +551,11 @@ details.opts[open] > summary{border-bottom:1px solid var(--line)}
 
           <p class="lbl2">How it measures</p>
           <div class="row">
-            <button class="chip on" id="modeStraight">Straight line</button>
-            <button class="chip" id="modeDrive">Drive time</button>
+            <button class="chip" id="modeStraight">Straight line</button>
+            <button class="chip on" id="modeDrive">Drive time</button>
           </div>
-          <p class="note" id="modeNote" style="margin:9px 0 0">Straight line is instant and free.
-          Drive time uses real roads, but needs your routing server connected.</p>
-          <div id="serverBox" class="hide">
+          <p class="note" id="modeNote" style="margin:9px 0 0">Drive time asks your routing server for real road times, then picks the venue where the split is actually fair.</p>
+          <div id="serverBox">
             <p class="note ok" id="serverNote" style="margin:9px 0 0">Connected.</p>
             <details class="adv">
               <summary>Change routing server</summary>
