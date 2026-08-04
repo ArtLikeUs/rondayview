@@ -108,6 +108,7 @@ const LIMITS: Record<string, number> = {
   geocode: 200,
   reverse: 200,
   road_check: 120,
+  routes:     60,
   notify_application: 10,
   // Generous: a real session legitimately reports several ads, and the
   // dedupe rule downstream is what actually keeps the totals honest.
@@ -419,14 +420,31 @@ async function handleGeocode(body: any): Promise<Response> {
   if (q.length < 2) return json({ error: "Give me something to search for." }, 400);
   if (q.length > 200) return json({ error: "That search is too long." }, 400);
 
-  const key = `s:${q.toLowerCase()}`;
+  // Where in the world the asker is, so a search for "Springfield" from
+  // Texas does not lead with one in Europe. Two separate levers:
+  // countrycodes is a hard filter, viewbox only nudges the ordering.
+  const cc = String(body?.cc ?? "").toLowerCase().replace(/[^a-z,]/g, "").slice(0, 40);
+  const nearLat = Number(body?.nearLat), nearLng = Number(body?.nearLng);
+  const hasNear = Number.isFinite(nearLat) && Number.isFinite(nearLng);
+
+  let extra = "";
+  if (cc) extra += `&countrycodes=${cc}`;
+  if (hasNear) {
+    // Roughly 600km around them. bounded=0, so this orders results
+    // rather than excluding anything outside the box.
+    const d = 5.5;
+    extra += `&viewbox=${(nearLng - d).toFixed(4)},${(nearLat + d).toFixed(4)},` +
+             `${(nearLng + d).toFixed(4)},${(nearLat - d).toFixed(4)}&bounded=0`;
+  }
+
+  const key = `s:${cc}:${hasNear ? nearLat.toFixed(0) + "," + nearLng.toFixed(0) : ""}:${q.toLowerCase()}`;
   const cached = await rpc("geocode_lookup", { key });
   if (cached) return json({ results: cached, cached: true });
 
   let upstream: Response;
   try {
     upstream = await fetch(
-      `${NOMINATIM}/search?format=jsonv2&limit=5&q=${encodeURIComponent(q)}`,
+      `${NOMINATIM}/search?format=jsonv2&limit=5&q=${encodeURIComponent(q)}${extra}`,
       { headers: { "User-Agent": UA, "Accept": "application/json" },
         signal: AbortSignal.timeout(10000) },
     );
@@ -440,7 +458,21 @@ async function handleGeocode(body: any): Promise<Response> {
     return json({ error: "The address lookup service returned an error." }, 502);
   }
 
-  const results = await upstream.json();
+  let results = await upstream.json();
+
+  // A hard country filter that finds nothing would otherwise strand
+  // anybody searching for a real place abroad. Widen and retry once.
+  if (cc && Array.isArray(results) && results.length === 0) {
+    try {
+      const retry = await fetch(
+        `${NOMINATIM}/search?format=jsonv2&limit=5&q=${encodeURIComponent(q)}`,
+        { headers: { "User-Agent": UA, "Accept": "application/json" },
+          signal: AbortSignal.timeout(10000) },
+      );
+      if (retry.ok) results = await retry.json();
+    } catch { /* keep the empty answer */ }
+  }
+
   if (Array.isArray(results) && results.length) {
     await rpc("geocode_store", { key, kind_in: "search", payload: results });
   }
@@ -482,6 +514,68 @@ async function handleReverse(body: any): Promise<Response> {
     await rpc("geocode_store", { key, kind_in: "reverse", payload: result });
   }
   return json({ result, cached: false });
+}
+
+
+// ---------- job: the actual roads people will drive ----------
+//
+// The map used to draw a dashed straight line from each person to the
+// meeting point, which is honest about distance and wrong about
+// everything else — it cuts across rivers, through the middle of a
+// park, and past the bridge you actually have to use. Pittsburgh in
+// particular makes a crow-flight line look ridiculous.
+//
+// This asks OpenRouteService for the real geometry. One request per
+// person, capped at four because that is the most the app allows.
+async function handleRoutes(body: any): Promise<Response> {
+  if (!ORS_KEY) return json({ error: "Routing is not configured." }, 500);
+
+  const origins = body?.origins;
+  const dest = body?.destination;
+  if (!Array.isArray(origins) || !origins.length || origins.length > MAX_ORIGINS) {
+    return json({ error: `Send between 1 and ${MAX_ORIGINS} origins.` }, 400);
+  }
+  if (!isCoord(dest) || !origins.every(isCoord)) {
+    return json({ error: "Coordinates must be [longitude, latitude] pairs." }, 400);
+  }
+  const profile = ALLOWED_PROFILES.includes(body?.profile) ? body.profile : "driving-car";
+
+  // All at once — four sequential round trips would be four times the wait.
+  const legs = await Promise.all(origins.map(async (o: number[]) => {
+    try {
+      const res = await fetch(
+        `https://api.openrouteservice.org/v2/directions/${profile}/geojson`,
+        {
+          method: "POST",
+          headers: {
+            "Authorization": ORS_KEY,
+            "Content-Type": "application/json",
+            "Accept": "application/geo+json",
+            "User-Agent": UA,
+          },
+          body: JSON.stringify({ coordinates: [o, dest] }),
+          signal: AbortSignal.timeout(9000),
+        },
+      );
+      if (!res.ok) {
+        console.error("directions returned", res.status);
+        return null;
+      }
+      const gj = await res.json();
+      const coords = gj?.features?.[0]?.geometry?.coordinates;
+      if (!Array.isArray(coords)) return null;
+      // Back to [lat, lng] so the map can use it without converting.
+      return coords.map((c: number[]) => [c[1], c[0]]);
+    } catch (e) {
+      console.error("directions failed:", e);
+      return null;
+    }
+  }));
+
+  // A null leg means that one person's route could not be drawn. The
+  // caller falls back to a straight line for that person only, rather
+  // than losing every line because one failed.
+  return json({ legs });
 }
 
 
@@ -684,6 +778,7 @@ Deno.serve(async (req: Request) => {
     geocode:    handleGeocode,
     reverse:    handleReverse,
     road_check: handleRoadCheck,
+    routes:     handleRoutes,
     ad_event:   (b) => handleAdEvent(req, b),
     notify_application: handleNotifyApplication,
   };

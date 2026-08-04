@@ -407,13 +407,26 @@ html,body{height:100%;overflow:hidden}
 }
 .lbl2:first-child{margin-top:0}
 details.opts{border-top:1px solid var(--line);background:#faf8fd}
+/* This holds the split and the measuring mode — the two things that
+   change the answer most — and as plain grey small-caps nobody opened
+   it. Now it reads as a control. */
 details.opts > summary{
-  padding:11px 13px;font-family:var(--mono);font-size:10.5px;letter-spacing:.13em;
-  text-transform:uppercase;color:var(--ink-2);cursor:pointer;list-style:none;
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:13px 14px;cursor:pointer;list-style:none;
+  font-family:var(--body);font-size:14.5px;font-weight:600;color:var(--ink);
 }
 details.opts > summary::-webkit-details-marker{display:none}
-details.opts > summary::after{content:' ▾';color:var(--mag)}
-details.opts[open] > summary::after{content:' ▴'}
+details.opts > summary::before{
+  content:'Options — who drives further, how it measures';
+}
+details.opts > summary::after{
+  content:'▾';color:#fff;background:var(--mag);border-radius:50%;
+  width:22px;height:22px;display:grid;place-items:center;font-size:11px;flex:none;
+  transition:transform .2s ease;
+}
+details.opts[open] > summary::after{transform:rotate(180deg)}
+details.opts > summary:hover{background:#f3edfb}
+details.opts[open] > summary{border-bottom:1px solid var(--line)}
 .opts-bd{padding:0 13px 14px}
 
 /* ---------- the sheet ---------- */
@@ -526,7 +539,7 @@ details.opts[open] > summary::after{content:' ▴'}
       </div>
 
       <details class="opts">
-        <summary>Options</summary>
+        <summary></summary>
         <div class="opts-bd">
           <p class="lbl2">Who drives further</p>
           <div class="row" id="presets"></div>
@@ -594,13 +607,13 @@ details.opts[open] > summary::after{content:' ▴'}
         </div>
       </section>
 
+      <div id="adBanner"></div>
+
       <section class="card hide" id="pickCard">
         <div class="card-hd"><h2>Best places to meet</h2><span class="note" id="pickNote"></span></div>
         <div class="card-bd" id="picks"></div>
         <div class="card-bd" id="adSponsored" style="padding-top:0"></div>
       </section>
-
-      <div id="adBanner"></div>
 
       <section class="card hide" id="venueCard">
         <div class="card-hd"><h2>Other places nearby</h2><span class="note" id="radiusNote"></span></div>
@@ -674,6 +687,7 @@ let lastRanked  = [];     // every candidate, scored, best first
 let lastPicks   = [];     // the three we actually offer
 let lastActive  = [];     // who was travelling when we worked it out
 let chosenPlace = null;   // which pick is currently the meeting point
+let routeLines  = [];     // the real driving geometry, one entry per person
 
 const $ = s => document.querySelector(s);
 
@@ -839,10 +853,44 @@ async function askServer(payload){
   return data;
 }
 
+// Somewhere the asker plausibly is, so a search for "Springfield" leads
+// with a nearby one. Best signal first: a location already set in this
+// trip, then wherever the map is looking.
+function searchAnchor(){
+  const known = people.find(p => p.lat !== null);
+  if (known) return { lat: known.lat, lng: known.lng };
+  const c = map.getCenter();
+  return { lat: c.lat, lng: c.lng };
+}
+
+// The user's country, from the browser's own region setting, widened to
+// include the neighbours people realistically drive to. Somebody in
+// Texas should see Mexico and Canada, not the Middle East.
+const NEIGHBOURS = {
+  us:'us,ca,mx', ca:'ca,us', mx:'mx,us,gt,bz',
+  gb:'gb,ie', ie:'ie,gb',
+  de:'de,at,ch,nl,be,fr,pl,cz', at:'at,de,ch,it,cz,sk', ch:'ch,de,fr,it,at',
+  fr:'fr,be,de,ch,it,es,lu', es:'es,pt,fr', pt:'pt,es', it:'it,fr,ch,at,si',
+  nl:'nl,be,de', be:'be,nl,fr,de,lu',
+  au:'au,nz', nz:'nz,au',
+  in:'in', br:'br,ar,uy,py', ar:'ar,cl,uy,br', za:'za',
+};
+function searchCountries(){
+  const loc = (navigator.languages?.[0] || navigator.language || '');
+  const region = (loc.split('-')[1] || '').toLowerCase();
+  if (!region) return '';
+  return NEIGHBOURS[region] || region;
+}
+
 async function geocode(q){
   if (serverUrl){
     try{
-      const { results } = await askServer({ kind:'geocode', q });
+      const near = searchAnchor();
+      const { results } = await askServer({
+        kind:'geocode', q,
+        cc: searchCountries(),
+        nearLat: near.lat, nearLng: near.lng
+      });
       return results || [];
     }catch(err){
       console.error('geocode via server failed, falling back', err);
@@ -1120,8 +1168,19 @@ function drawMap(){
   if (meetPoint){
     people.forEach((p,i)=>{
       if (p.lat===null) return;
-      L.polyline([[p.lat,p.lng],[meetPoint.lat,meetPoint.lng]],
-        {color:COLORS[i],weight:2.5,opacity:.65,dashArray:'5,7'}).addTo(layer);
+      const road = routeLines[i];
+      if (road && road.length > 1){
+        // The real roads. Drawn twice: a wide pale stroke underneath so
+        // the line stays readable where it crosses dark map features,
+        // then the colour on top. Same trick every maps app uses.
+        L.polyline(road, {color:'#fff', weight:7, opacity:.85}).addTo(layer);
+        L.polyline(road, {color:COLORS[i], weight:4, opacity:.95}).addTo(layer);
+      } else {
+        // No route came back for this person — a dashed straight line is
+        // honest about that, rather than pretending we know the way.
+        L.polyline([[p.lat,p.lng],[meetPoint.lat,meetPoint.lng]],
+          {color:COLORS[i],weight:2.5,opacity:.65,dashArray:'5,7'}).addTo(layer);
+      }
     });
     const t = L.divIcon({className:'',iconSize:[34,34],iconAnchor:[17,17],html:'<div class="target"></div>'});
     L.marker([meetPoint.lat,meetPoint.lng],{icon:t,zIndexOffset:800})
@@ -1133,8 +1192,12 @@ function drawMap(){
       L.marker([v.lat,v.lng],{icon:vi}).bindPopup(`<strong>${v.name}</strong><br>${v.kindLabel}`).addTo(layer);
     });
   }
+  // Fit to the routes when we have them: a road that loops out to a
+  // bridge can leave the map framed on the wrong thing otherwise.
+  routeLines.forEach(line => { if (line) line.forEach(c => pts.push(c)); });
+
   if (pts.length===1) map.setView(pts[0],14);
-  else if (pts.length>1) map.fitBounds(L.latLngBounds(pts).pad(0.28));
+  else if (pts.length>1) map.fitBounds(L.latLngBounds(pts).pad(0.18));
 }
 
 /* ============================================================
@@ -1356,7 +1419,7 @@ async function findSpot(){
   const wsum = active.reduce((s,p)=>s+p.weight,0);
   const targets = active.map(p => p.weight/wsum);
   lastActive = active;
-  lastRanked = []; lastPicks = []; chosenPlace = null;
+  lastRanked = []; lastPicks = []; chosenPlace = null; routeLines = [];
 
   const geoPoint = solve(active, targets);
   meetPoint = geoPoint;
@@ -1397,11 +1460,41 @@ async function findSpot(){
   let winner = null;
 
   if (driveMode && serverUrl){
-    const candidates = venues.length
-      ? spreadOut(venues, geoPoint, MAX_CANDIDATES)
-      : gridAround(geoPoint);
     try{
       $('#spotName').textContent = 'Checking real drive times…';
+
+      // Pass one: find where the driving actually balances.
+      //
+      // The venues were gathered around the straight-line point, and on
+      // a road network with rivers and bridges that point can be a long
+      // way from where the drive times come out equal — Pittsburgh is
+      // the obvious case. Ranking only what sits near the crow-flight
+      // answer is why an even split could still produce 7 minutes
+      // against 10. So probe a ring of plain map points first and let
+      // the road network say where the middle really is.
+      let centre = geoPoint;
+      try{
+        const probe = gridAround(geoPoint);
+        const probeTimes = await fetchMatrix(active, probe);
+        const balanced = rankPlaces(active, targets, probe, probeTimes)[0];
+        if (balanced) centre = { lat: balanced.v.lat, lng: balanced.v.lng };
+      }catch(e){ console.error('balance probe failed, using the geometric point', e); }
+
+      // Only worth a second lookup if it moved somewhere meaningfully
+      // different. Under half a mile and the same venues apply.
+      if (haversine(centre, geoPoint) > 0.4){
+        try{
+          const nearer = await fetchVenues(centre);
+          markFuelledRestStops(nearer);
+          const usable = nearer.filter(v => v.kind !== 'rest' || v.hasFuel);
+          if (usable.length) venues = usable;
+        }catch(e){ console.error('venues near the balance point failed', e); }
+      }
+
+      const candidates = venues.length
+        ? spreadOut(venues, centre, MAX_CANDIDATES)
+        : gridAround(centre);
+
       const durations = await fetchMatrix(active, candidates);
       lastRanked = rankPlaces(active, targets, candidates, durations);
       // Same rule for the headline spot: do not open with a forecourt.
@@ -1485,6 +1578,7 @@ async function findSpot(){
   // view without making anybody find the handle and drag it.
   $('.spot').classList.add('found');
   sheetState('open');
+  loadRoutes(active);          // not awaited; the lines arrive and redraw
 
   $('#goBtn').disabled = false;
   $('#goBtn').textContent = 'Find the spot';
@@ -1671,6 +1765,25 @@ function useSponsoredSpot(ad){
   choosePlace({ v: place, legs, unit: 'mi', total: legs.reduce((a,b)=>a+b,0) });
 }
 
+// Ask for the roads people will actually drive. Never awaited by
+// anything that matters: the answer is already on screen and the lines
+// simply improve when they arrive.
+async function loadRoutes(active){
+  routeLines = [];
+  if (!serverUrl || !meetPoint || !active.length) return;
+  try{
+    const { legs } = await askServer({
+      kind:'routes',
+      origins: active.map(p => [p.lng, p.lat]),
+      destination: [meetPoint.lng, meetPoint.lat]
+    });
+    if (Array.isArray(legs)) routeLines = legs;
+    drawMap();
+  }catch(err){
+    console.error('routes', err);   // the dashed lines still work
+  }
+}
+
 /* ---------- the three picks ---------- */
 function fmtLeg(value, unit){
   return unit === 'min' ? `${Math.round(value/60)} min` : `${value.toFixed(1)} mi`;
@@ -1727,6 +1840,8 @@ function choosePlace(s){
   $('#modeBadge').classList.toggle('live', s.unit === 'min');
 
   $('.spot').classList.add('found');
+  routeLines = [];
+  loadRoutes(lastActive);
   renderSplit(lastActive);
   renderPicks();
   renderVenueSection();
