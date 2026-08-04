@@ -175,7 +175,23 @@ input[type=range]::-moz-range-thumb{
 .legend .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
 .legend .mi{font-family:var(--mono);font-size:12.5px;color:var(--ink-2)}
 
-.spot{background:var(--ink);color:#fff;padding:14px;border-radius:12px;margin-bottom:12px}
+.spot{
+  background:var(--ink);color:#fff;padding:14px;border-radius:12px;margin-bottom:12px;
+  transition:background .45s ease, box-shadow .45s ease;
+}
+/* Found. The whole card lights up, because "we have an answer" is the
+   single most important thing on the screen and dark-on-dark was
+   letting it pass unnoticed. */
+.spot.found{
+  background:linear-gradient(135deg,#E0246E 0%,#b0164f 100%);
+  box-shadow:0 6px 22px -8px rgba(224,36,110,.75);
+}
+.spot.found .lab{color:#ffd6e5}
+.spot.found .badge{background:rgba(255,255,255,.24);color:#fff}
+.spot.found .badge.live{background:#fff;color:var(--mag)}
+.spot.found .why{background:rgba(255,255,255,.18);border-left-color:#fff;color:#fff}
+.spot.found .row .chip{background:transparent;border-color:rgba(255,255,255,.55);color:#fff}
+.spot.found .row .chip:hover{background:#fff;border-color:#fff;color:var(--mag)}
 .spot .lab{
   font-family:var(--mono);font-size:10.5px;letter-spacing:.15em;text-transform:uppercase;
   color:#b6a8cf;display:flex;align-items:center;gap:8px;
@@ -580,7 +596,7 @@ details.opts[open] > summary::after{content:' ▴'}
       <div id="adBanner"></div>
 
       <section class="card hide" id="venueCard">
-        <div class="card-hd"><h2>Everything else nearby</h2><span class="note" id="radiusNote"></span></div>
+        <div class="card-hd"><h2>Other places nearby</h2><span class="note" id="radiusNote"></span></div>
         <div class="card-bd" style="padding-bottom:4px"><div class="row" id="filters"></div></div>
         <div class="card-bd" id="venues" style="padding-top:4px"></div>
       </section>
@@ -1117,204 +1133,38 @@ function drawMap(){
 /* ============================================================
    VENUES (OpenStreetMap Overpass — free, no key)
    ============================================================ */
-const KINDS = {
-  cafe:['coffee','Coffee'], ice_cream:['coffee','Coffee'],
-  bar:['bar','Bar'], pub:['bar','Bar'], biergarten:['bar','Bar'],
-  restaurant:['food','Food'], fast_food:['food','Food'],
-  fuel:['fuel','Gas'],
-  park:['park','Park'],
-  // Tagged on highway=, not amenity=. Handled separately below.
-  services:['rest','Rest stop'], rest_area:['rest','Rest stop']
-};
-
-// Overpass is free and volunteer-run, so any single server is often busy.
-// Try the mirrors in turn before giving up.
-const OVERPASS_MIRRORS = [
-  'https://overpass-api.de/api/interpreter',
-  'https://overpass.kumi.systems/api/interpreter'
-];
-
-async function overpassQuery(q){
-  const problems = [];
-  for (const url of OVERPASS_MIRRORS){
-    const host = new URL(url).hostname;
-    const stop = new AbortController();
-    const timer = setTimeout(()=>stop.abort(), 8000);
-    try{
-      const res = await fetch(url, {
-        method:'POST',
-        body:'data='+encodeURIComponent(q),
-        headers:{'Content-Type':'application/x-www-form-urlencoded'},
-        signal: stop.signal
-      });
-      clearTimeout(timer);
-      if (!res.ok){
-        problems.push(`${host} returned ${res.status}`);
-        continue;
-      }
-      const text = await res.text();
-      try{ return JSON.parse(text); }
-      catch{ problems.push(`${host} sent a non-JSON reply`); }
-    }catch(e){
-      clearTimeout(timer);
-      problems.push(`${host} ${e.name === 'AbortError' ? 'timed out' : 'unreachable'}`);
-    }
-  }
-  throw new Error(problems.join('; ') || 'no venue directory answered');
-}
-
-// Turn raw Overpass elements into venues we can use.
-function mapElements(elements){
-  return elements.map(e=>{
-    const lat = e.lat ?? e.center?.lat, lng = e.lon ?? e.center?.lon;
-    if (!lat || !e.tags) return null;
-    const key = e.tags.amenity
-             || (e.tags.leisure === 'park' ? 'park' : null)
-             || (/^(services|rest_area)$/.test(e.tags.highway || '') ? e.tags.highway : null);
-    const k = KINDS[key]; if (!k) return null;
-    // Loads of gas stations and rest areas are mapped without a name.
-    const label = e.tags.name || e.tags.brand || e.tags.operator
-                  || (key === 'fuel' ? 'Gas station' : null)
-                  || (k[0] === 'rest' ? 'Rest stop' : null);
-    if (!label) return null;
-    // Keep the OpenStreetMap id so a saved meetup can point at the same
-    // row next time instead of making a duplicate place.
-    const ref = e.type && e.id ? `${e.type}/${e.id}` : null;
-    return {
-      name:label, lat, lng, kind:k[0], kindLabel:k[1], sourceRef:ref,
-      // A motorway service area has fuel and food by definition. A plain
-      // lay-by tagged rest_area might be a picnic table, so it has to
-      // earn that description — see markFuelledRestStops().
-      isServices: key === 'services'
-    };
-  }).filter(Boolean);
-}
+// Both directories are asked on the server now, which normalises them
+// into one shape and caches the answer. The page used to hold its own
+// Overpass client and a Nominatim fallback; between them they were the
+// slowest thing in the app, and the Nominatim half was browser traffic
+// that OpenStreetMap's terms ask you not to send.
+let venueSource = null;   // which directory actually answered
 
 // "A rest stop with a gas station" is the one highway meeting place
 // worth offering, and OpenStreetMap does not record that relationship
-// directly. We already fetch fuel stations in the same query, so it can
-// be worked out: a rest area with a pump within about 250 metres is one.
-// A motorway service area counts automatically — fuel is what makes it
-// a service area.
+// directly. We already get fuel stations in the same answer, so it can
+// be worked out: a rest area with a pump within about 250 metres is
+// one. A motorway service area counts automatically — fuel is what
+// makes it a service area.
 function markFuelledRestStops(list){
   const pumps = list.filter(v => v.kind === 'fuel');
   list.forEach(v => {
     if (v.kind !== 'rest') return;
-    v.hasFuel = v.isServices || pumps.some(p => haversine(p, v) < 0.155);  // ~250 m in miles
+    v.hasFuel = v.isServices || pumps.some(p => haversine(p, v) < 0.155);  // ~250 m
   });
   return list;
 }
 
-let venueSource = null;   // which directory actually answered
-
-async function fetchVenuesOverpass(centre){
-  for (const r of [1200, 2600, 4800]){
-    const q = `[out:json][timeout:25];
-(
-  nwr["amenity"~"^(cafe|bar|pub|restaurant|fast_food|ice_cream|biergarten)$"]["name"](around:${r},${centre.lat},${centre.lng});
-  nwr["amenity"="fuel"](around:${r},${centre.lat},${centre.lng});
-  nwr["leisure"="park"]["name"](around:${r},${centre.lat},${centre.lng});
-);
-out center 150;`;
-    const j = await overpassQuery(q);
-    const list = mapElements(j.elements || []);
-    if (list.length >= 8 || r === 4800){
-      $('#radiusNote').textContent = `within ${(r/1609).toFixed(1)} mi`;
-      return list;
-    }
-  }
-  return [];
-}
-
-// Backup directory. Nominatim is the same service that powers the address
-// search in this app, so if addresses work, this works. Slower and thinner
-// than Overpass, but it answers when Overpass is buried.
-async function fetchVenuesNominatim(centre){
-  const d = 0.045;   // roughly a 3 mile box
-  const vb = [
-    (centre.lng-d).toFixed(5), (centre.lat+d).toFixed(5),
-    (centre.lng+d).toFixed(5), (centre.lat-d).toFixed(5)
-  ].join(',');
-
-  const searches = [
-    ['gas station', 'fuel',   'Gas'],
-    ['coffee',      'coffee', 'Coffee'],
-    ['restaurant',  'food',   'Food']
-  ];
-
-  const out = [];
-  for (let i=0; i<searches.length; i++){
-    const [term, kind, kindLabel] = searches[i];
-    try{
-      const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=15&bounded=1&viewbox=${vb}&q=${encodeURIComponent(term)}`;
-      const r = await fetch(url, { headers:{ 'Accept':'application/json' } });
-      if (r.ok){
-        const j = await r.json();
-        j.forEach(h => {
-          const name = (h.name && h.name.trim()) || h.display_name.split(', ')[0];
-          if (!name) return;
-          out.push({ name, lat:+h.lat, lng:+h.lon, kind, kindLabel });
-        });
-      }
-    }catch(e){ /* try the next category */ }
-    // Nominatim asks for no more than one request a second. Be a good guest.
-    if (i < searches.length-1) await new Promise(r => setTimeout(r, 1100));
-  }
-  return out;
-}
-
-// Best source: ask our own server. It has a datacenter IP and a proper
-// User-Agent, so Overpass treats it as a real client instead of throttling it.
-async function fetchVenuesViaServer(centre, radius){
-  const res = await fetch(serverUrl, {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ kind:'venues', lat:centre.lat, lng:centre.lng, radius })
-  });
-  const data = await res.json().catch(()=>({}));
-  if (!res.ok) throw new Error(data.error || 'venue lookup failed on the server');
-  return mapElements(data.elements || []);
-}
-
 async function fetchVenues(centre){
-  const problems = [];
-
-  // 1. Our own server.
-  if (serverUrl){
-    for (const r of [1600, 3200, 6000]){
-      try{
-        const list = await fetchVenuesViaServer(centre, r);
-        if (list.length >= 8 || r === 6000){
-          if (list.length){
-            venueSource = 'server';
-            $('#radiusNote').textContent = `within ${(r/1609).toFixed(1)} mi`;
-            return list;
-          }
-        }
-      }catch(err){ problems.push(err.message); break; }
-    }
-    if (!problems.length) problems.push('nothing listed near this point');
-  }
-
-  // 2. Straight from the browser, in case the server route is unavailable.
-  try{
-    const list = await fetchVenuesOverpass(centre);
-    if (list.length){ venueSource = 'browser'; return list; }
-  }catch(err){ problems.push(err.message); }
-
-  // 3. Last resort: the same directory that powers address search.
-  const backup = await fetchVenuesNominatim(centre);
-  if (backup.length){
-    venueSource = 'nominatim';
-    $('#radiusNote').textContent = 'within ~3 mi';
-    return backup;
-  }
-
   venueSource = null;
-  throw new Error(problems.join('; ') || 'no directory answered');
+  if (!serverUrl) return [];
+  const radius = 2600;
+  const data = await askServer({ kind:'venues', lat:centre.lat, lng:centre.lng, radius });
+  venueSource = data.source || null;
+  return data.places || [];
 }
 
-// Keep candidates spread out instead of 25 taquerias on the same block.
+
 function spreadOut(list, centre, max){
   const sorted = [...list].sort((a,b)=>haversine(a,centre)-haversine(b,centre));
   const seen = new Set(), out = [];
@@ -1523,6 +1373,7 @@ async function findSpot(){
   // feel slow, and the venue directory can take eight seconds on a good
   // day. So the answer goes up now and improves in place.
   $('#spotName').textContent = 'Working it out…';
+  $('.spot').classList.remove('found');
   renderSplit(active);
   sheetState('peek');
 
@@ -1622,6 +1473,11 @@ async function findSpot(){
   drawMap();
   loadAds(meetPoint.lat, meetPoint.lng);   // not awaited; ads must never hold up the answer
   $('#saveMeetupBtn').classList.toggle('hide', !session);
+
+  // The answer is final: light the card up and bring the results into
+  // view without making anybody find the handle and drag it.
+  $('.spot').classList.add('found');
+  sheetState('open');
 
   $('#goBtn').disabled = false;
   $('#goBtn').textContent = 'Find the spot';
@@ -1863,6 +1719,7 @@ function choosePlace(s){
   $('#modeBadge').textContent = s.unit === 'min' ? 'Drive time' : 'Straight line';
   $('#modeBadge').classList.toggle('live', s.unit === 'min');
 
+  $('.spot').classList.add('found');
   renderSplit(lastActive);
   renderPicks();
   renderVenueSection();
@@ -1905,7 +1762,7 @@ function renderVenues(){
   const list = venues
     .filter(v => !picked.has(`${v.lat},${v.lng}`))
     .filter(v => activeFilter==='all' || v.kind===activeFilter)
-    .slice(0,14);
+    .slice(0,5);
   $('#venues').innerHTML = '';
   list.forEach(v=>{
     const el = document.createElement('div');

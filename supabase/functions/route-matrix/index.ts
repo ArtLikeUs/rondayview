@@ -267,6 +267,104 @@ async function handleMatrix(body: any): Promise<Response> {
 }
 
 // ---------- job 2: nearby venues ----------
+//
+// Two directories, started together.
+//
+// It used to be Overpass alone, with the browser falling back to
+// Nominatim only after Overpass had already given up — so a bad
+// Overpass day cost 8 seconds of waiting and then another 30 for three
+// sequential searches from the page. Measured at over 40 seconds end to
+// end, which is why the app felt broken.
+//
+// Now both start at once and Overpass is merely preferred: if it
+// answers we use it, because its data is richer, and if it does not the
+// other one is already finished or nearly. Worst case becomes the
+// slower of the two rather than the sum.
+
+const CATEGORY: Record<string, [string, string]> = {
+  cafe: ["coffee", "Coffee"], ice_cream: ["coffee", "Coffee"],
+  bar: ["bar", "Bar"], pub: ["bar", "Bar"], biergarten: ["bar", "Bar"],
+  restaurant: ["food", "Food"], fast_food: ["food", "Food"],
+  fuel: ["fuel", "Gas"], park: ["park", "Park"],
+  services: ["rest", "Rest stop"], rest_area: ["rest", "Rest stop"],
+};
+
+// Both sources get flattened to the same shape here rather than in the
+// browser, so the page does not need to know which one answered.
+function fromOverpass(elements: any[]): any[] {
+  return elements.map((e) => {
+    const lat = e.lat ?? e.center?.lat;
+    const lng = e.lon ?? e.center?.lon;
+    if (!lat || !e.tags) return null;
+    const key = e.tags.amenity
+      ?? (e.tags.leisure === "park" ? "park" : null)
+      ?? (/^(services|rest_area)$/.test(e.tags.highway ?? "") ? e.tags.highway : null);
+    const cat = CATEGORY[key as string];
+    if (!cat) return null;
+    const name = e.tags.name || e.tags.brand || e.tags.operator
+      || (key === "fuel" ? "Gas station" : null)
+      || (cat[0] === "rest" ? "Rest stop" : null);
+    if (!name) return null;
+    return {
+      name, lat, lng, kind: cat[0], kindLabel: cat[1],
+      sourceRef: e.type && e.id ? `${e.type}/${e.id}` : null,
+      isServices: key === "services",
+    };
+  }).filter(Boolean);
+}
+
+async function venuesViaOverpass(lat: number, lng: number, radius: number): Promise<any[]> {
+  const query = `[out:json][timeout:12];
+(
+  nwr["amenity"~"^(cafe|bar|pub|restaurant|fast_food|ice_cream|biergarten)$"]["name"](around:${radius},${lat},${lng});
+  nwr["amenity"="fuel"](around:${radius},${lat},${lng});
+  nwr["leisure"="park"]["name"](around:${radius},${lat},${lng});
+  nwr["highway"~"^(services|rest_area)$"](around:${radius},${lat},${lng});
+);
+out center 80;`;
+  const { data } = await overpass(query);
+  const places = fromOverpass(data.elements ?? []);
+  if (!places.length) throw new Error("overpass returned nothing usable");
+  return places;
+}
+
+// Nominatim has no "everything nearby" query, so it takes one search per
+// category. Their terms ask for no more than one request a second, which
+// is the floor on how fast this can be — about three seconds. Still well
+// under the eight Overpass is allowed.
+async function venuesViaNominatim(lat: number, lng: number, radius: number): Promise<any[]> {
+  const d = Math.max(radius, 2000) / 111000;   // degrees, roughly
+  const vb = [(lng - d).toFixed(5), (lat + d).toFixed(5),
+              (lng + d).toFixed(5), (lat - d).toFixed(5)].join(",");
+
+  const searches: [string, string, string][] = [
+    ["coffee", "coffee", "Coffee"],
+    ["restaurant", "food", "Food"],
+    ["gas station", "fuel", "Gas"],
+  ];
+
+  const out: any[] = [];
+  for (let i = 0; i < searches.length; i++) {
+    const [term, kind, kindLabel] = searches[i];
+    try {
+      const res = await fetch(
+        `${NOMINATIM}/search?format=jsonv2&limit=15&bounded=1&viewbox=${vb}&q=${encodeURIComponent(term)}`,
+        { headers: { "User-Agent": UA, "Accept": "application/json" },
+          signal: AbortSignal.timeout(7000) },
+      );
+      if (res.ok) {
+        for (const h of await res.json()) {
+          const name = (h.name && h.name.trim()) || String(h.display_name ?? "").split(", ")[0];
+          if (name) out.push({ name, lat: +h.lat, lng: +h.lon, kind, kindLabel, sourceRef: null, isServices: false });
+        }
+      }
+    } catch { /* next category */ }
+    if (i < searches.length - 1) await new Promise((r) => setTimeout(r, 1100));
+  }
+  if (!out.length) throw new Error("nominatim returned nothing");
+  return out;
+}
+
 async function handleVenues(body: any): Promise<Response> {
   const lat = Number(body?.lat);
   const lng = Number(body?.lng);
@@ -276,41 +374,38 @@ async function handleVenues(body: any): Promise<Response> {
   }
   const radius = Math.min(Math.max(Number(body?.radius) || 2600, 300), 8000);
 
-  // Rounded to about 110 metres. Two people searching the same
-  // neighbourhood share an answer instead of each paying for one, which
-  // matters more the more people use this.
+  // Rounded to about 110 metres, so two people searching the same
+  // neighbourhood share an answer instead of each paying for one.
   const key = `venues:${lat.toFixed(3)},${lng.toFixed(3)}:${radius}`;
   const cached = await rpc("geocode_lookup", { key, max_age_days: 21 });
-  if (cached) return json({ elements: cached, source: "cache", cached: true });
+  if (cached) return json({ places: cached, source: "cache", cached: true });
 
-  // Rest areas and motorway services are asked for on purpose. They are
-  // the one kind of place beside a fast road where stopping to meet
-  // somebody is a normal thing to do rather than a hazard, so they are
-  // the exception that makes the highway rule workable instead of just
-  // leaving people with nowhere.
-  //
-  // 80 results rather than 150: the app only ever ranks 25 candidates
-  // and shows 14, so the rest was paid for and thrown away.
-  const query = `[out:json][timeout:12];
-(
-  nwr["amenity"~"^(cafe|bar|pub|restaurant|fast_food|ice_cream|biergarten)$"]["name"](around:${radius},${lat},${lng});
-  nwr["amenity"="fuel"](around:${radius},${lat},${lng});
-  nwr["leisure"="park"]["name"](around:${radius},${lat},${lng});
-  nwr["highway"~"^(services|rest_area)$"](around:${radius},${lat},${lng});
-);
-out center 80;`;
+  // Both start now. Overpass is awaited first because its data is
+  // better, but the other is already running rather than waiting its
+  // turn — that ordering is the whole fix.
+  const overpassTry = venuesViaOverpass(lat, lng, radius);
+  const nominatimTry = venuesViaNominatim(lat, lng, radius);
+  nominatimTry.catch(() => {});   // it may never be needed; do not let it complain
 
+  let places: any[] = [];
+  let source = "overpass";
   try {
-    const { data, host } = await overpass(query);
-    const elements = data.elements ?? [];
-    if (elements.length) {
-      await rpc("geocode_store", { key, kind_in: "venues", payload: elements });
-    }
-    return json({ elements, source: host, cached: false });
+    places = await overpassTry;
   } catch (e) {
-    console.error("venue lookup failed:", (e as Error).message);
-    return json({ error: `No venue directory answered (${(e as Error).message})` }, 502);
+    console.error("overpass venues failed:", (e as Error).message);
+    try {
+      places = await nominatimTry;
+      source = "nominatim";
+    } catch (e2) {
+      console.error("nominatim venues failed:", (e2 as Error).message);
+      return json({ error: "No venue directory answered." }, 502);
+    }
   }
+
+  if (places.length) {
+    await rpc("geocode_store", { key, kind_in: "venues", payload: places });
+  }
+  return json({ places, source, cached: false });
 }
 
 // ---------- jobs 3 and 4: addresses ----------
