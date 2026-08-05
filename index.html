@@ -396,8 +396,35 @@ html,body{height:100%;overflow:hidden}
 
 .entry{
   background:var(--card);border-radius:16px;box-shadow:0 4px 20px -4px rgba(34,24,51,.35);
-  overflow:hidden;max-height:calc(100vh - 210px);overflow-y:auto;
+  overflow:hidden;max-height:calc(100vh - 210px);
 }
+.entry-body{overflow-y:auto;max-height:calc(100vh - 260px)}
+
+/* Minimized once a spot is found, or any time somebody wants the map
+   back. One line — who's coming and a chevron — replaces the whole
+   editor, which is what was eating the screen on a phone. */
+.entry-hd{
+  width:100%;border:0;background:none;padding:13px 14px;cursor:pointer;
+  display:flex;align-items:center;gap:10px;text-align:left;
+  font-family:var(--body);font-weight:600;font-size:14.5px;color:var(--ink);
+}
+.entry-hd:hover{background:#faf8fd}
+.entry-hd-people{
+  flex:1;min-width:0;display:flex;align-items:center;gap:6px;
+  overflow:hidden;white-space:nowrap;text-overflow:ellipsis;
+}
+.entry-hd-people .mini-dot{
+  width:20px;height:20px;border-radius:50%;flex:none;
+  display:grid;place-items:center;color:#fff;font-family:var(--mono);font-size:10px;
+}
+.entry-hd-chev{
+  color:#fff;background:var(--mag);border-radius:50%;width:22px;height:22px;
+  display:grid;place-items:center;font-size:11px;flex:none;transition:transform .2s ease;
+}
+.entry.collapsed .entry-hd-chev{transform:rotate(180deg)}
+.entry.collapsed .entry-body{display:none}
+.entry.collapsed{max-height:none}
+
 .entry-foot{display:flex;align-items:center;gap:10px;padding:0 12px 12px}
 .entry-foot .ghost{flex:1}
 .entry .go{border-radius:0;padding:15px}
@@ -531,7 +558,12 @@ details.opts[open] > summary{border-bottom:1px solid var(--line)}
       </button>
     </div>
 
-    <div class="entry">
+    <div class="entry" id="entryCard">
+      <button class="entry-hd" id="entryToggle" aria-expanded="true" aria-label="Minimize who's coming">
+        <span class="entry-hd-people" id="entryHdPeople">Who's coming</span>
+        <span class="entry-hd-chev">&#9662;</span>
+      </button>
+      <div class="entry-body" id="entryBody">
       <div id="people"></div>
       <div class="entry-foot">
         <button class="ghost" id="addBtn">+ Add another person</button>
@@ -584,6 +616,7 @@ details.opts[open] > summary{border-bottom:1px solid var(--line)}
       </details>
 
       <button class="go" id="goBtn" disabled>Find the spot</button>
+      </div>
     </div>
     <p class="note" id="goHint" style="margin:7px 4px;color:#fff;text-shadow:0 1px 5px rgba(34,24,51,.7)">Set at least 2 locations to start.</p>
   </div>
@@ -954,10 +987,25 @@ async function isOnHighway(lat, lng){
 /* ============================================================
    PEOPLE UI
    ============================================================ */
+function renderEntryHeader(){
+  const el = $('#entryHdPeople');
+  if (!el) return;
+  const dots = people.map((p,i) =>
+    `<span class="mini-dot" style="background:${COLORS[i]}">${esc(initials(p.name))}</span>`).join('');
+  el.innerHTML = `${dots}<span>${esc(people.map(p => p.name).join(', '))}</span>`;
+}
+
+function setEntryCollapsed(on){
+  $('#entryCard').classList.toggle('collapsed', on);
+  $('#entryToggle').setAttribute('aria-expanded', String(!on));
+  setTimeout(() => map.invalidateSize(), 260);
+}
+
 function renderPeople(){
   const host = $('#people');
   host.innerHTML = '';
   const sh = shares();
+  renderEntryHeader();
 
   people.forEach((p,i) => {
     const c = COLORS[i];
@@ -1256,7 +1304,16 @@ async function fetchVenues(centre){
   venueSource = null;
   if (!serverUrl) return [];
 
-  let best = [];
+  // Widen and ACCUMULATE. A first version replaced the previous radius's
+  // results with each new, larger search — so a tight cluster of two or
+  // three genuinely close places was thrown away the moment the search
+  // had to widen for a sixth, even though those first two or three were
+  // exactly what should have won. Now every radius adds to the pool
+  // rather than discarding what came before, so a nearby real option can
+  // never be dropped in favour of a farther one just because the farther
+  // search returned more results.
+  const seen = new Set();
+  let pool = [];
   for (const radius of SEARCH_RADII){
     let places = [];
     try{
@@ -1271,14 +1328,29 @@ async function fetchVenues(centre){
     markParking(places);
     markFuelledRestStops(places);
 
-    // Only somewhere with parking, because somebody is driving there.
-    const usable = places.filter(v =>
-      v.hasParking && (v.kind !== 'rest' || v.hasFuel));
+    // Rest areas are the one category that can genuinely be nothing —
+    // an unnamed lay-by with no services. That is the case a fuel check
+    // catches. Ordinary businesses are not held to the same test: OSM
+    // marks a discrete parking LOT far more often than it marks the
+    // street parking that most restaurants and bars actually rely on,
+    // so requiring the tag rejected real, close places in favour of gas
+    // stations, which always have their own mapped lot. One real search
+    // near Pittsburgh found 15 nearby restaurants and bars, all
+    // rejected on this test, leaving only 10 gas stations to rank —
+    // exactly the "not central" complaint this was meant to prevent.
+    // hasParking still counts for something: see the small preference
+    // in rankPlaces below.
+    const usable = places.filter(v => v.kind !== 'rest' || v.hasFuel);
 
-    if (usable.length > best.length) best = usable;
-    if (best.length >= ENOUGH_PLACES) break;
+    for (const v of usable){
+      const key = v.sourceRef || `${v.name}:${v.lat.toFixed(4)},${v.lng.toFixed(4)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      pool.push(v);
+    }
+    if (pool.length >= ENOUGH_PLACES) break;
   }
-  return best;
+  return pool;
 }
 
 
@@ -1377,6 +1449,27 @@ function rankPlaces(active, targets, cands, durations){
   if (!usable.length) return [];
   const minTotal = Math.min(...usable);
 
+  // How much extra total driving a candidate may ask for before "more
+  // exactly equal" stops being worth it.
+  //
+  // The bug this fixes: fairness used to be weighted so far past detour
+  // (times 100 against times 0.7) that a spot needing three times the
+  // driving to be perfectly even would always beat a spot two minutes
+  // away that was only slightly uneven. That is how a search once
+  // sent everybody nine minutes to a gas station on a highway when a
+  // much closer real option existed — the close option was less
+  // perfectly balanced, so the formula buried it.
+  //
+  // A third more total driving than the best available is the line.
+  // Below it, fairness still decides. Past it, a candidate is treated
+  // the same way a gas station is: usable if it is genuinely the only
+  // option, never preferred over something closer. This is a ratio
+  // against whatever was actually found nearby, not a fixed number of
+  // minutes, so it does not fight the areas where everything really is
+  // far apart — there, the "best available" is itself far, and nothing
+  // exceeds it by much.
+  const MAX_DETOUR = 0.35;
+
   const scored = cands.map((v, j) => {
     const L = legs[j], tot = totals[j];
     if (tot === null || tot <= 0) return null;
@@ -1389,11 +1482,22 @@ function rankPlaces(active, targets, cands, durations){
     const fairErr = Math.sqrt(err / shares.length);
 
     const detour = tot / minTotal - 1;        // 0 = nothing is closer
+    const tooFar = detour > MAX_DETOUR;
 
     return {
-      v, legs: L, unit, total: tot, shares, fairErr, detour,
-      lastResort: LAST_RESORT.has(v.kind),
-      score: fairErr*100 + 0.7*detour     // fairness first, extra driving second
+      v, legs: L, unit, total: tot, shares, fairErr, detour, tooFar,
+      lastResort: LAST_RESORT.has(v.kind) || tooFar,
+      // The flat penalty when tooFar is what actually keeps it out of
+      // the top three even in the fallback path, where lastResort
+      // status alone is not consulted — see topThree below.
+      //
+      // A confirmed parking lot is worth a small nudge, not a
+      // requirement: small enough to break a close tie in favour of
+      // it, far too small to pull a place with 3x the fairness error
+      // ahead of a real, closer restaurant that just is not the one
+      // business in walking distance OSM happens to have tagged a lot
+      // for.
+      score: fairErr*100 + 0.7*detour + (tooFar ? 5 : 0) + (v.hasParking ? 0 : 0.1)
     };
   }).filter(Boolean);
 
@@ -1621,6 +1725,7 @@ async function findSpot(){
   // view without making anybody find the handle and drag it.
   $('.spot').classList.add('found');
   sheetState('open');
+  setEntryCollapsed(true);     // the editor's job is done; give the map the room back
   loadRoutes(active);          // not awaited; the lines arrive and redraw
 
   $('#goBtn').disabled = false;
@@ -2564,6 +2669,7 @@ function openMeetup(id){
   lastRanked = []; lastPicks = []; chosenPlace = null;
 
   renderPeople(); renderPresets(); refreshState();
+  setEntryCollapsed(false);
   $('#resultCard').classList.remove('hide');
   $('#spotName').textContent = m.places?.name || m.title || 'Saved spot';
   $('#modeBadge').textContent = 'Straight line';
@@ -2928,6 +3034,7 @@ async function collectAnswers(){
   if (added){
     normalizeWeights();
     renderPeople(); renderPresets(); refreshState(); drawMap();
+    setEntryCollapsed(false);   // Find the spot lives in here; make sure it can be tapped
     toast(added === 1 ? 'Somebody shared their location.' : `${added} people shared their location.`);
   }
   const status = $('#askStatus');
@@ -3039,6 +3146,8 @@ async function maybeShowJoin(){
 /* ---------- wire up ---------- */
 $('#saveMeetupBtn').addEventListener('click', saveMeetup);
 $('#askBtn').addEventListener('click', openAskSheet);
+$('#entryToggle').addEventListener('click', () =>
+  setEntryCollapsed(!$('#entryCard').classList.contains('collapsed')));
 $('#addBtn').addEventListener('click', () => {
   if (people.length >= MAX) return;
   people.push({id:nextId++,name:`Person ${people.length+1}`,query:'',lat:null,lng:null,label:'',weight:100/(people.length+1)});
