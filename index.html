@@ -171,7 +171,30 @@ input[type=range]::-moz-range-thumb{
 }
 .target::after{content:'';width:9px;height:9px;border-radius:50%;background:#fff}
 @keyframes beat{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
-.venue-dot{width:11px;height:11px;border-radius:50%;background:#fff;border:3px solid var(--ink)}
+.venue-dot{width:11px;height:11px;border-radius:50%;background:#fff;border:3px solid var(--ink);cursor:pointer}
+.venue-dot:hover{border-color:var(--mag);transform:scale(1.25)}
+
+/* ---------- what a map dot says when you tap it ---------- */
+.vpop{font-family:var(--body);min-width:200px}
+.vpop-nm{font-weight:700;font-size:14.5px;line-height:1.25;color:var(--ink)}
+.vpop-kind{
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--ink-2);margin-top:2px;
+}
+.vpop-body{margin-top:9px}
+.vpop-wait{font-size:12.5px;color:var(--ink-2)}
+.vpop-row{display:flex;align-items:center;gap:7px;padding:3px 0;font-size:12.5px}
+.vpop-sw{width:9px;height:9px;border-radius:3px;flex:none}
+.vpop-who{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink)}
+.vpop-val{font-family:var(--mono);font-size:11.5px;color:var(--ink-2);white-space:nowrap}
+.vpop-val em{font-style:normal;color:var(--mag)}
+.vpop-acts{display:flex;gap:6px;margin-top:10px;align-items:center}
+.vpop-acts .mini{text-decoration:none;text-align:center}
+.vpop-chosen{
+  font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--good);font-weight:500;
+}
+.leaflet-popup-content{margin:11px 13px}
 @media (prefers-reduced-motion:reduce){.target{animation:none}*{transition:none!important}}
 
 .fair{display:flex;height:34px;border-radius:9px;overflow:hidden;border:1px solid var(--line)}
@@ -397,8 +420,20 @@ html,body{height:100%;overflow:hidden}
 .entry{
   background:var(--card);border-radius:16px;box-shadow:0 4px 20px -4px rgba(34,24,51,.35);
   overflow:hidden;max-height:calc(100vh - 210px);
+  /* A column, so the scrolling middle gets exactly the room left over
+     after the header and the button. The previous version gave the card
+     and its inner body two DIFFERENT max-heights, and since the card
+     clips, the bottom of the body's own scroll area was hidden behind
+     that clip — on a 820px-tall desktop window with Options open, the
+     Find button rendered 600px below anything reachable. */
+  display:flex;flex-direction:column;
 }
-.entry-body{overflow-y:auto;max-height:calc(100vh - 260px)}
+.entry-hd{flex:none}
+.entry-body{overflow-y:auto;min-height:0;flex:1}
+/* The primary action never scrolls away. It sits outside the scrolling
+   region entirely, pinned to the bottom of the card. */
+.entry > .go{flex:none}
+.entry.collapsed > .go{display:none}
 
 /* Minimized once a spot is found, or any time somebody wants the map
    back. One line — who's coming and a chevron — replaces the whole
@@ -615,8 +650,8 @@ details.opts[open] > summary{border-bottom:1px solid var(--line)}
         </div>
       </details>
 
-      <button class="go" id="goBtn" disabled>Find the spot</button>
       </div>
+      <button class="go" id="goBtn" disabled>Find the spot</button>
     </div>
     <p class="note" id="goHint" style="margin:7px 4px;color:#fff;text-shadow:0 1px 5px rgba(34,24,51,.7)">Set at least 2 locations to start.</p>
   </div>
@@ -723,6 +758,7 @@ let lastPicks   = [];     // the three we actually offer
 let lastActive  = [];     // who was travelling when we worked it out
 let chosenPlace = null;   // which pick is currently the meeting point
 let routeLines  = [];     // the real driving geometry, one entry per person
+let openVenueKey = null;  // which map dot's popup is open, so a redraw can restore it
 
 const $ = s => document.querySelector(s);
 
@@ -1206,7 +1242,12 @@ $('#saveUrl').addEventListener('click', async () => {
    MAP
    ============================================================ */
 function drawMap(){
+  // clearLayers() removes the markers, which fires popupclose, which
+  // would blank the key we need to restore the popup a few lines later.
+  // Hold onto it first.
+  const reopen = openVenueKey;
   layer.clearLayers();
+  openVenueKey = reopen;
   const pts = [];
   people.forEach((p,i)=>{
     if (p.lat===null) return;
@@ -1233,13 +1274,35 @@ function drawMap(){
       }
     });
     const t = L.divIcon({className:'',iconSize:[34,34],iconAnchor:[17,17],html:'<div class="target"></div>'});
-    L.marker([meetPoint.lat,meetPoint.lng],{icon:t,zIndexOffset:800})
-      .bindPopup('<strong>The meeting point</strong>').addTo(layer);
+    const target = L.marker([meetPoint.lat,meetPoint.lng],{icon:t,zIndexOffset:800}).addTo(layer);
+    // The target sits exactly on top of the chosen venue's own dot, so it
+    // is the marker people actually tap. It gets the same detail rather
+    // than a label, otherwise the one place everybody taps first is the
+    // one place that tells you nothing.
+    if (chosenPlace?.v){
+      const ck = venueKey(chosenPlace.v);
+      target.bindPopup(venuePopupShell(chosenPlace.v), { minWidth: 214 });
+      target.on('popupopen', () => { openVenueKey = ck; fillVenuePopup(chosenPlace.v, target); });
+      target.on('popupclose', () => { if (openVenueKey === ck) openVenueKey = null; });
+      // Same restore as the venue dots: routes landing redraws everything,
+      // and the target is the marker most likely to be open when it does.
+      if (reopen === ck) target.openPopup();
+    } else {
+      target.bindPopup('<strong>The meeting point</strong>');
+    }
     pts.push([meetPoint.lat,meetPoint.lng]);
 
     venues.filter(v=>activeFilter==='all'||v.kind===activeFilter).slice(0,25).forEach(v=>{
       const vi = L.divIcon({className:'',iconSize:[11,11],iconAnchor:[5,5],html:'<div class="venue-dot"></div>'});
-      L.marker([v.lat,v.lng],{icon:vi}).bindPopup(`<strong>${v.name}</strong><br>${v.kindLabel}`).addTo(layer);
+      const marker = L.marker([v.lat,v.lng],{icon:vi}).addTo(layer);
+      // A name and a category was all this used to say, which is the least
+      // useful thing to know about a place you are considering meeting at.
+      marker.bindPopup(venuePopupShell(v), { minWidth: 214, closeButton: true });
+      marker.on('popupopen', () => { openVenueKey = venueKey(v); fillVenuePopup(v, marker); });
+      marker.on('popupclose', () => { if (openVenueKey === venueKey(v)) openVenueKey = null; });
+      // Routes arriving redraws the whole layer, which would otherwise
+      // shut a popup somebody is in the middle of reading.
+      if (reopen === venueKey(v)) marker.openPopup();
     });
   }
   // Fit to the routes when we have them: a road that loops out to a
@@ -1930,6 +1993,98 @@ async function loadRoutes(active){
   }catch(err){
     console.error('routes', err);   // the dashed lines still work
   }
+}
+
+/* ============================================================
+   TAPPING A PLACE ON THE MAP
+
+   Every dot is a candidate, not just the three that made the list. If
+   somebody can see a place on the map they should be able to ask the
+   same question of it that the app answered for the top three: how far
+   is this for each of us, and is it fair?
+
+   Times come from the ranking when the place was one of the candidates
+   measured, and are fetched on the spot when it was not — so the answer
+   is always real minutes rather than an estimate, and it never claims
+   drive time it has not actually asked for.
+   ============================================================ */
+function venueKey(v){ return `${v.lat.toFixed(5)},${v.lng.toFixed(5)}`; }
+
+function venuePopupShell(v){
+  return `<div class="vpop" data-key="${venueKey(v)}">
+      <div class="vpop-nm">${esc(v.name)}</div>
+      <div class="vpop-kind">${esc(v.kindLabel)}</div>
+      <div class="vpop-body"><div class="vpop-wait">Working out the drive…</div></div>
+    </div>`;
+}
+
+// Already measured during ranking?
+function rankedFor(v){
+  const k = venueKey(v);
+  return lastRanked.find(s => venueKey(s.v) === k) || null;
+}
+
+async function fillVenuePopup(v, marker){
+  const root = marker.getPopup()?.getElement()?.querySelector('.vpop');
+  if (!root) return;
+  const body = root.querySelector('.vpop-body');
+  if (!body || !lastActive.length) return;
+
+  let entry = rankedFor(v);
+
+  if (!entry){
+    // Not one of the candidates that got measured. Ask about this one
+    // specifically rather than guessing from straight-line distance.
+    try{
+      if (driveMode && serverUrl){
+        const d = await fetchMatrix(lastActive, [v]);
+        const legs = lastActive.map((_, i) => d[i][0]);
+        if (legs.every(x => Number.isFinite(x))){
+          entry = { v, legs, unit:'min', total: legs.reduce((a,b)=>a+b,0) };
+        }
+      }
+    }catch(err){ console.error('one-off drive time', err); }
+    if (!entry){
+      const legs = lastActive.map(p => haversine(p, v));
+      entry = { v, legs, unit:'mi', total: legs.reduce((a,b)=>a+b,0) };
+    }
+  }
+
+  // The popup may have been closed while we were waiting.
+  if (!marker.getPopup()?.isOpen()) return;
+  const live = marker.getPopup().getElement()?.querySelector('.vpop-body');
+  if (!live) return;
+
+  const total = entry.total || 1;
+  const wsum = lastActive.reduce((a,p) => a + p.weight, 0) || 1;
+  const rows = entry.legs.map((x, i) => {
+    const share = Math.round(x / total * 100);
+    const asked = Math.round(lastActive[i].weight / wsum * 100);
+    // Show the gap only when it is big enough to matter to a person.
+    const off = Math.abs(share - asked) >= 6 ? ` <em>(asked ${asked}%)</em>` : '';
+    return `<div class="vpop-row">
+        <span class="vpop-sw" style="background:${COLORS[i]}"></span>
+        <span class="vpop-who">${esc(lastActive[i].name)}</span>
+        <span class="vpop-val">${fmtLeg(x, entry.unit)} · ${share}%${off}</span>
+      </div>`;
+  }).join('');
+
+  const chosen = chosenPlace && venueKey(chosenPlace.v) === venueKey(v);
+
+  live.innerHTML = `
+    ${rows}
+    <div class="vpop-acts">
+      ${chosen
+        ? `<span class="vpop-chosen">This is the meeting point</span>`
+        : `<button class="mini solid" data-meet="1">Meet here instead</button>`}
+      <a class="mini" target="_blank" rel="noopener"
+         href="https://www.google.com/maps/dir/?api=1&destination=${v.lat},${v.lng}">Directions</a>
+    </div>`;
+
+  live.querySelector('[data-meet]')?.addEventListener('click', () => {
+    marker.closePopup();
+    choosePlace(entry);
+  });
 }
 
 /* ---------- the three picks ---------- */
